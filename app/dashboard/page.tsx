@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Bar,
   BarChart,
@@ -1682,6 +1683,7 @@ function trackingUrl(carrier: string | null, trackingNo: string | null) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const currentFyLabel = getCurrentFyLabel();
   const defaultTaxYearOptions = useMemo(() => {
     const [startYear] = currentFyLabel.split("-").map(Number);
@@ -1851,9 +1853,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) console.warn("No session found - redirect disabled while rebuilding");
+      if (!data.session) router.replace("/login");
     });
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const readStoredTaxYear = () => {
