@@ -2,8 +2,10 @@
 
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
@@ -24,8 +26,9 @@ export default function LoginPage() {
       return
     }
 
-    setMessage('Login successful. No redirect yet.')
+    setMessage('Login successful. Redirecting to dashboard...')
     setLoading(false)
+    router.push('/dashboard')
   }
 
   async function handleForgotPassword() {
