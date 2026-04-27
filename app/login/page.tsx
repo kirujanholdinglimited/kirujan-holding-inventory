@@ -6,14 +6,12 @@ import { supabase } from '@/lib/supabase'
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   async function handleSignIn() {
-    setLoading(true)
     setMessage('')
-    setError('')
+    setLoading(true)
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -21,35 +19,61 @@ export default function LoginPage() {
     })
 
     if (error) {
-      setError(error.message)
-    } else {
-      setMessage('Login successful. No redirect yet.')
-    }
-
-    setLoading(false)
-  }
-
-  async function handleForgotPassword() {
-    setLoading(true)
-    setMessage('')
-    setError('')
-
-    if (!email) {
-      setError('Enter your email first, then click Forgot password.')
+      setMessage(error.message)
       setLoading(false)
       return
     }
 
+    setMessage('Login successful. No redirect yet.')
+    setLoading(false)
+  }
+
+  async function handleForgotPassword() {
+    setMessage('')
+
+    if (!email) {
+      setMessage('Enter your email first, then click Forgot password.')
+      return
+    }
+
+    setLoading(true)
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: 'http://localhost:3000/reset-password',
     })
 
     if (error) {
-      setError(error.message)
-    } else {
-      setMessage('Password reset email sent. Check your inbox.')
+      setMessage(error.message)
+      setLoading(false)
+      return
     }
 
+    setMessage('Password reset email sent. Check your inbox.')
+    setLoading(false)
+  }
+
+  async function handleCreateAccount() {
+    setMessage('')
+
+    if (!email || !password) {
+      setMessage('Enter an email and password first, then click Create an account.')
+      return
+    }
+
+    setLoading(true)
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    })
+
+    if (error) {
+      setMessage(error.message)
+      setLoading(false)
+      return
+    }
+
+    setMessage('Account created. Check your email if confirmation is required.')
     setLoading(false)
   }
 
@@ -87,18 +111,6 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {error && (
-          <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-
-        {message && (
-          <div className="mb-4 rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-700">
-            {message}
-          </div>
-        )}
-
         <button
           type="button"
           onClick={handleSignIn}
@@ -109,10 +121,21 @@ export default function LoginPage() {
         </button>
 
         <div className="text-center">
-          <button type="button" className="text-sm text-black hover:underline">
+          <button
+            type="button"
+            onClick={handleCreateAccount}
+            disabled={loading}
+            className="text-sm text-black hover:underline disabled:opacity-50"
+          >
             Create an account
           </button>
         </div>
+
+        {message && (
+          <p className="mt-4 text-sm text-center text-black">
+            {message}
+          </p>
+        )}
       </div>
     </div>
   )
