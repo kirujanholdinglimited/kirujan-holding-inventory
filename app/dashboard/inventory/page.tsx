@@ -6831,18 +6831,20 @@ async function confirmSold() {
                       </div>
                     </div>
 
-                    {finaliseConfirmBarcodeValue ? (
-                      <div className="rounded-xl border bg-neutral-50 p-3">
-                        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700">
-                          Scan to auto-fill & confirm units
-                        </div>
-                        <Code39Barcode value={finaliseConfirmBarcodeValue} className="border-0 bg-transparent p-0" />
-                      </div>
-                    ) : null}
-
                     {allFinaliseChecklistScanned ? (
-                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
-                        All items scanned and box ready to be finalised
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+                          All items scanned and box ready to be finalised
+                        </div>
+
+                        {finaliseConfirmBarcodeValue ? (
+                          <div className="rounded-xl border bg-neutral-50 p-3">
+                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700">
+                              Scan to auto-fill box
+                            </div>
+                            <Code39Barcode value={finaliseConfirmBarcodeValue} className="border-0 bg-transparent p-0" />
+                          </div>
+                        ) : null}
                       </div>
                     ) : finaliseChecklistRows.length > 0 ? (
                       <div className="rounded-xl border bg-white p-3">
@@ -7266,11 +7268,7 @@ async function confirmSold() {
               </div>
 
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className={buttonClass(false)}
-                  onClick={() => setFinaliseItemNotInBoxOpen(false)}
-                >
+                <button type="button" className={buttonClass(false)}>
                   Add item to items waiting to be scanned
                 </button>
                 <button type="submit" className={buttonClass(true)} autoFocus>
