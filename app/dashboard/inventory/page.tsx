@@ -1840,9 +1840,66 @@ export default function InventoryPage() {
         if (shipErr) throw shipErr;
 
         const rows = (shipData ?? []) as ShipmentRow[];
-        setShipments(rows.slice(0, rowsPerPage));
+        const visibleShipments = rows.slice(0, rowsPerPage);
+        const visibleShipmentBoxNos = visibleShipments
+          .map((s) => s.shipment_box_no)
+          .filter(Boolean) as string[];
+
+        let shipmentItems: PurchaseWithProduct[] = [];
+        if (visibleShipmentBoxNos.length > 0) {
+          const { data: purData, error: purErr } = await supabase
+            .from("purchases")
+            .select(`
+              id,
+              item_no,
+              order_no,
+              created_at,
+              product_id,
+              purchase_date,
+              delivery_date,
+              expiry_date,
+              shop,
+              tracking_no,
+              quantity,
+              remaining_qty,
+              unit_cost,
+              shipping_cost,
+              tax_amount,
+              discount_type,
+              discount_value,
+              total_cost,
+              tax_year,
+              status,
+              write_off_reason,
+              write_off_date,
+              return_reason,
+              returned_date,
+              refunded_date,
+              refund_amount,
+              sold_amount,
+              amazon_fees,
+              misc_fees,
+              order_date,
+              amazon_payout,
+              profit_loss,
+              roi,
+              shipment_box_id,
+              sale_type,
+              fbm_shipping_fee,
+              fbm_tracking_no,
+              return_shipping_fee,
+              last_return_date,
+              product:products(id, asin, brand, product_name, product_code, barcode, amazon_code)
+            `)
+            .in("shipment_box_id", visibleShipmentBoxNos);
+
+          if (purErr) throw purErr;
+          shipmentItems = (purData ?? []) as PurchaseWithProduct[];
+        }
+
+        setShipments(visibleShipments);
         setHasNextPage(rows.length > rowsPerPage);
-        setPurchases([]);
+        setPurchases(shipmentItems);
         setLoading(false);
         return;
       }
