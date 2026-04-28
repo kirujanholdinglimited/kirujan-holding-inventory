@@ -2586,9 +2586,9 @@ export default function DashboardPage() {
     () => [
       prototypePlCards.sales,
       prototypePlCards.cogs,
-      prototypePlCards.fixed_assets,
       prototypePlCards.expenses,
       prototypePlCards.final_pl,
+      prototypePlCards.fixed_assets,
     ],
     [prototypePlCards]
   );
@@ -2655,8 +2655,16 @@ export default function DashboardPage() {
       const expenseRowsForMonth = allExpenseRows.filter((row) =>
         inDateRange(parseDate(row.expense_date), month.start, month.end)
       );
+      const loanInterestRowsForMonth = financeRows.filter((row) => {
+        if (!isLoanInterestFinanceRow(row)) return false;
+        return inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at), month.start, month.end);
+      });
+      const loanInterestExpensesForMonth = loanInterestRowsForMonth.reduce(
+        (sum, row) => sum + safeNumber(row.amount),
+        0
+      );
       const expenses = moneyValue(
-        expenseRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0)
+        expenseRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0) + loanInterestExpensesForMonth
       );
       const fixedAssets = 0;
       const sales = soldRows.reduce((sum, row) => sum + toNumber(row.sold_amount), 0);
@@ -2700,7 +2708,7 @@ export default function DashboardPage() {
         amzPayout,
       };
     });
-  }, [allExpenseRows, fyLabel, payoutRows, purchaseRows, shipmentRows]);
+  }, [allExpenseRows, financeRows, fyLabel, payoutRows, purchaseRows, shipmentRows]);
 
   const profitTrendData = useMemo(
     () =>

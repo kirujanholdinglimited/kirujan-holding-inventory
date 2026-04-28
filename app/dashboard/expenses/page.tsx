@@ -256,6 +256,60 @@ function LabelWithHelp({
   );
 }
 
+
+function SuggestionTextInput({
+  value,
+  onChange,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const query = value.trim().toLowerCase();
+  const suggestions = options
+    .filter((option) => !query || option.toLowerCase().includes(query))
+    .slice(0, 8);
+
+  return (
+    <div className="relative">
+      <input
+        value={value}
+        onFocus={() => setOpen(true)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setOpen(true);
+        }}
+        placeholder={placeholder}
+        className="h-10 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-400"
+      />
+
+      {open && suggestions.length > 0 ? (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg">
+          {suggestions.map((option) => (
+            <button
+              key={option}
+              type="button"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(option);
+                setOpen(false);
+              }}
+              className="block w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50"
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SectionCard({
   title,
   subtitle,
@@ -941,17 +995,6 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-4">
-      <datalist id="expense-item-options">
-        {existingItems.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
-
-      <datalist id="expense-shop-options">
-        {existingShops.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1078,14 +1121,13 @@ export default function ExpensesPage() {
               label="Item"
               help="What the expense actually was. This field suggests items you have already used."
             />
-            <input
-              list="expense-item-options"
+            <SuggestionTextInput
               value={form.item}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, item: toTitleCase(e.target.value) }))
+              onChange={(value) =>
+                setForm((prev) => ({ ...prev, item: toTitleCase(value) }))
               }
+              options={existingItems}
               placeholder="e.g. Amazon Subscription"
-              className="h-10 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-400"
             />
           </div>
 
@@ -1094,14 +1136,13 @@ export default function ExpensesPage() {
               label="Shop"
               help="Where the expense was bought or charged. This field suggests shops you have already used."
             />
-            <input
-              list="expense-shop-options"
+            <SuggestionTextInput
               value={form.shop}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, shop: toTitleCase(e.target.value) }))
+              onChange={(value) =>
+                setForm((prev) => ({ ...prev, shop: toTitleCase(value) }))
               }
+              options={existingShops}
               placeholder="e.g. Tesco"
-              className="h-10 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-400"
             />
           </div>
 
@@ -2042,15 +2083,14 @@ export default function ExpensesPage() {
                     label="Item"
                     help="What the expense actually was. Existing items are suggested."
                   />
-                  <input
-                    list="expense-item-options"
+                  <SuggestionTextInput
                     value={editingExpense.item}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       setEditingExpense((prev) =>
-                        prev ? { ...prev, item: toTitleCase(e.target.value) } : prev
+                        prev ? { ...prev, item: toTitleCase(value) } : prev
                       )
                     }
-                    className="h-10 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-400"
+                    options={existingItems}
                   />
                 </div>
 
@@ -2059,15 +2099,14 @@ export default function ExpensesPage() {
                     label="Shop"
                     help="Where the expense was bought or charged. Existing shops are suggested."
                   />
-                  <input
-                    list="expense-shop-options"
+                  <SuggestionTextInput
                     value={editingExpense.shop ?? ""}
-                    onChange={(e) =>
+                    onChange={(value) =>
                       setEditingExpense((prev) =>
-                        prev ? { ...prev, shop: toTitleCase(e.target.value) } : prev
+                        prev ? { ...prev, shop: toTitleCase(value) } : prev
                       )
                     }
-                    className="h-10 w-full rounded-xl border border-neutral-300 px-3 text-sm outline-none focus:border-neutral-400"
+                    options={existingShops}
                   />
                 </div>
 

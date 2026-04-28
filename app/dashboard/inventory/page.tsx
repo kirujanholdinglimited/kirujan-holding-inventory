@@ -146,6 +146,30 @@ function fmtDate(iso: string | null) {
   return `${day}-${m}-${y}`;
 }
 
+function parseDateForFilter(dateStr: string | null | undefined) {
+  if (!dateStr) return null;
+
+  const raw = String(dateStr).trim();
+  const firstPart = raw.slice(0, 10);
+
+  const isoMatch = firstPart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    const parsed = new Date(Number(y), Number(m) - 1, Number(d));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const ukMatch = firstPart.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (ukMatch) {
+    const [, d, m, y] = ukMatch;
+    const parsed = new Date(Number(y), Number(m) - 1, Number(d));
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const parsed = new Date(firstPart + "T00:00:00");
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function daysBetween(startIso: string | null, endIso: string) {
   if (!startIso) return 0;
   const start = new Date(`${String(startIso).slice(0, 10)}T00:00:00`);
@@ -598,8 +622,8 @@ function getFyBounds(label: string) {
 function inSelectedTaxYear(dateStr: string | null | undefined, fyLabel?: string | null) {
   if (!dateStr) return true;
 
-  const dt = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
-  if (Number.isNaN(dt.getTime())) return true;
+  const dt = parseDateForFilter(dateStr);
+  if (!dt) return true;
 
   const activeFyLabel = isValidTaxYearLabel(fyLabel) ? fyLabel : getCurrentFyLabel();
   const bounds = getFyBounds(activeFyLabel);
@@ -609,8 +633,8 @@ function inSelectedTaxYear(dateStr: string | null | undefined, fyLabel?: string 
 function inSelectedRange(dateStr: string | null | undefined, range: RangeKey, fyLabel?: string | null) {
   if (!dateStr) return true;
 
-  const dt = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
-  if (Number.isNaN(dt.getTime())) return true;
+  const dt = parseDateForFilter(dateStr);
+  if (!dt) return true;
 
   const today = new Date();
   const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
@@ -1771,6 +1795,7 @@ export default function InventoryPage() {
 
   function getRowDateForRangeRaw(row: PurchaseWithProduct) {
     if (row.status === "sold") return row.order_date ?? row.created_at;
+    if (row.status === "written_off") return row.write_off_date ?? row.created_at;
     if (row.status === "awaiting_refund" || row.status === "refunded") return row.returned_date ?? row.created_at;
     if (row.status === "selling") return row.created_at;
     if (row.status === "sent_to_amazon") return row.created_at;
@@ -2215,6 +2240,8 @@ export default function InventoryPage() {
         return row.purchase_date ?? "";
       case "delivery_date":
         return row.delivery_date ?? "";
+      case "write_off_date":
+        return row.write_off_date ?? "";
       case "last_return_date":
         return row.last_return_date ?? "";
       case "asin":
@@ -5765,8 +5792,8 @@ async function confirmSold() {
                   ) : isWrittenOffFilter ? (
                     <>
                       <SortableTh
-                        label="Order ID"
-                        sortKey="order_no"
+                        label="Written Off Date"
+                        sortKey="write_off_date"
                         activeKey={purchaseSortKey}
                         direction={purchaseSortDirection}
                         onToggle={togglePurchaseSort}
@@ -8485,7 +8512,7 @@ async function confirmSold() {
                       </div>
                     </div>
 
-                    <div className="grid gap-4 xl:grid-cols-[1.05fr_1.35fr]">
+                    <div className="grid gap-4 xl:grid-cols-[0.85fr_1.55fr]">
                       <div className="rounded-xl border bg-neutral-50 p-4">
                         <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                         <div className="mt-3 space-y-2 text-sm text-neutral-800">
