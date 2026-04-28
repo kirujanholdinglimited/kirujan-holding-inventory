@@ -7265,7 +7265,14 @@ async function confirmSold() {
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  className={buttonClass(false)}
+                  onClick={() => setFinaliseItemNotInBoxOpen(false)}
+                >
+                  Add item to items waiting to be scanned
+                </button>
                 <button type="submit" className={buttonClass(true)} autoFocus>
                   OK
                 </button>
