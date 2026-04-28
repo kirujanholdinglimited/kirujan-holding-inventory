@@ -1065,6 +1065,12 @@ function toNumber(x: unknown): number {
   return 0;
 }
 
+function moneyValue(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const pennies = n * 100;
+  return (n >= 0 ? Math.trunc(pennies + Number.EPSILON) : Math.trunc(pennies - Number.EPSILON)) / 100;
+}
+
 function rowMiles(row: Record<string, any>): number {
   const direct = firstNumber(row, ["miles", "mileage_miles", "business_miles", "distance_miles"]);
   if (direct > 0) return direct;
@@ -1112,15 +1118,19 @@ function rowItemCostTotal(row: Record<string, any>): number {
     "buy_cost",
     "price",
   ]);
-  return unitCost * qty;
+  return moneyValue(unitCost * qty);
 }
 
 function rowVatTotal(row: Record<string, any>): number {
-  return firstNumber(row, ["tax_amount"]);
+  return moneyValue(firstNumber(row, ["tax_amount"]));
 }
 
 function rowInboundShippingTotal(row: Record<string, any>): number {
-  return firstNumber(row, ["shipping_cost"]);
+  return moneyValue(firstNumber(row, ["shipping_cost"]));
+}
+
+function rowStoredTotalCost(row: Record<string, any>): number {
+  return moneyValue(firstNumber(row, ["total_cost", "total_purchase_cost", "cost_total", "total"]));
 }
 
 function shipmentTaxTotal(row: Record<string, any>): number {
@@ -1167,7 +1177,9 @@ function shipmentBaseShippingTotal(row: Record<string, any>): number {
 }
 
 function rowValueAtCost(row: Record<string, any>): number {
-  return rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row);
+  const storedTotal = rowStoredTotalCost(row);
+  if (storedTotal > 0) return storedTotal;
+  return moneyValue(rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row));
 }
 
 function rowTurnover(row: Record<string, any>): number {
@@ -2373,7 +2385,7 @@ export default function DashboardPage() {
       (sum, row) => sum + rowInboundShippingTotal(row),
       0
     );
-    const cogs = itemCostTotal + vatTotal + inboundShippingTotal;
+    const cogs = activePurchaseRows.reduce((sum, row) => sum + rowValueAtCost(row), 0);
     const fixedAssets = activeExpenseRows
       .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() === "equipment")
       .reduce((sum, row) => sum + toNumber(row.amount), 0);
