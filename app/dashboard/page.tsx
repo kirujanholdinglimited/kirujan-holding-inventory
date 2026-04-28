@@ -6675,16 +6675,16 @@ const exportSystemKpiHistoryPdf = () => {
                         ))}
                       </div>
                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                        <HmrcCard title="Finance In" value={money(prototypeFinanceSummary.financeIn)} sub="Total money in from finance page" onClick={() => setHmrcDetailKey("funding_in")} />
-                        <HmrcCard title="Finance Out" value={money(prototypeFinanceSummary.financeOut)} sub="Total money out from finance page incl. tax payments" onClick={() => setHmrcDetailKey("funding_out")} />
-                        <HmrcCard title="Net Finance" value={money(prototypeFinanceSummary.netFinance)} sub="Finance in - finance out" onClick={() => setHmrcDetailKey("net_finance")} />
-                        <HmrcCard title="Running Balance" value={money(prototypeFinanceSummary.runningBalanceValue)} sub="Opening balance + full written formula" onClick={() => setHmrcDetailKey("prototype_running_balance")} />
-                      </div>
-                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <HmrcCard title="Gross Profit" value={money(prototypeProfitTaxSummary.grossProfit)} sub="Sales - Cost of Goods" onClick={() => setHmrcDetailKey("prototype_gross_profit")} />
                         <HmrcCard title="Net Profit Before Tax" value={money(prototypeProfitTaxSummary.netProfitBeforeTax)} sub="Gross Profit - Business Running Expenses" onClick={() => setHmrcDetailKey("prototype_net_profit_before_tax")} />
                         <HmrcCard title="Taxable Profit" value={money(prototypeProfitTaxSummary.taxableProfit)} sub="Net Profit Before Tax - Fixed Assets" onClick={() => setHmrcDetailKey("prototype_taxable_profit")} />
                         <HmrcCard title="Est Tax" value={money(prototypeProfitTaxSummary.estimatedTax)} sub="Taxable Profit × 19%" onClick={() => setHmrcDetailKey("prototype_est_tax")} />
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <HmrcCard title="Finance In" value={money(prototypeFinanceSummary.financeIn)} sub="Total money in from finance page" onClick={() => setHmrcDetailKey("funding_in")} />
+                        <HmrcCard title="Finance Out" value={money(prototypeFinanceSummary.financeOut)} sub="Total money out from finance page incl. tax payments" onClick={() => setHmrcDetailKey("funding_out")} />
+                        <HmrcCard title="Net Finance" value={money(prototypeFinanceSummary.netFinance)} sub="Finance in - finance out" onClick={() => setHmrcDetailKey("net_finance")} />
+                        <HmrcCard title="Running Balance" value={money(prototypeFinanceSummary.runningBalanceValue)} sub="Opening balance + full written formula" onClick={() => setHmrcDetailKey("prototype_running_balance")} />
                       </div>
                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                         <HmrcCard title="Opening Stock" value={money(openingStock)} sub={`${prevFyLabel} closing stock value`} onClick={() => setHmrcDetailKey("opening_stock")} />
