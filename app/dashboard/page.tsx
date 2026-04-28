@@ -2321,6 +2321,44 @@ export default function DashboardPage() {
     [purchaseRows, rangeBounds]
   );
 
+  const activeWrittenOffFeeRows = useMemo(
+    () =>
+      purchaseRows.filter((row) => {
+        const writeOffDate = row.write_off_date ?? row.written_off_date ?? row.updated_at ?? row.created_at ?? null;
+        if (!writeOffDate) return false;
+        if (toNumber(row.misc_fees) === 0) return false;
+        return inDateRange(parseDate(writeOffDate), rangeBounds.start, rangeBounds.end);
+      }),
+    [purchaseRows, rangeBounds]
+  );
+
+  const activeReturnFeeRows = useMemo(
+    () =>
+      purchaseRows.filter((row) => {
+        const returnFee =
+          toNumber(row.return_shipping_fee) +
+          toNumber(row.customer_return_fee) +
+          toNumber(row.return_fee_from_customer) +
+          toNumber(row.customer_return_charge) +
+          toNumber(row.return_postage_charge);
+        if (returnFee === 0) return false;
+
+        const returnFeeDate =
+          row.last_return_date ??
+          row.return_date ??
+          row.returned_date ??
+          row.refunded_date ??
+          row.order_date ??
+          row.sold_date ??
+          row.sale_date ??
+          row.updated_at ??
+          row.created_at;
+
+        return inDateRange(parseDate(returnFeeDate), rangeBounds.start, rangeBounds.end);
+      }),
+    [purchaseRows, rangeBounds]
+  );
+
   const activeExpenseRows = useMemo(
     () =>
       allExpenseRows.filter((row) =>
@@ -2385,10 +2423,10 @@ export default function DashboardPage() {
     };
 
     const amazonFeesTotal = activeSoldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0);
-    const miscProductCostTotal = activeSoldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
+    const miscProductCostTotal = activeSoldRows.reduce((sum, row) => sum + (row.write_off_date || row.written_off_date ? 0 : toNumber(row.misc_fees)), 0);
     const shippingTotal = activeShipmentRows.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0);
     const shippingTaxTotal = activeShipmentRows.reduce((sum, row) => sum + shipmentTaxTotal(row), 0);
-    const customerReturnFeeTotal = activeSoldRows.reduce(
+    const customerReturnFeeTotal = activeReturnFeeRows.reduce(
       (sum, row) =>
         sum +
         toNumber(row.return_shipping_fee) +
@@ -2399,8 +2437,8 @@ export default function DashboardPage() {
       0
     );
     const fbmShippingFeeTotal = activeSoldRows.reduce((sum, row) => sum + (row.fbm_shipping_fee != null ? toNumber(row.fbm_shipping_fee) : toNumber(row.ship_fee)), 0);
-    const writeOffTotal = activeWrittenOffRows.reduce(
-      (sum, row) => sum + rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row),
+    const writeOffTotal = activeWrittenOffFeeRows.reduce(
+      (sum, row) => sum + toNumber(row.misc_fees),
       0
     );
     const loanInterestTotal = activeFinanceRows
@@ -2435,7 +2473,7 @@ export default function DashboardPage() {
       if (a.mainCategory !== b.mainCategory) return a.mainCategory.localeCompare(b.mainCategory);
       return b.value - a.value;
     });
-  }, [activeExpenseRows, activeFinanceRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows]);
+  }, [activeExpenseRows, activeFinanceRows, activeReturnFeeRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows]);
 
   const prototypePlCards = useMemo<Record<PrototypePLCardKey, PrototypePLCardData>>(() => {
     const sales = activeSoldRows.reduce((sum, row) => sum + rowTurnover(row), 0);
@@ -2453,10 +2491,10 @@ export default function DashboardPage() {
       .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() === "equipment")
       .reduce((sum, row) => sum + toNumber(row.amount), 0);
     const amazonFees = activeSoldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0);
-    const miscProductCost = activeSoldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
+    const miscProductCost = activeSoldRows.reduce((sum, row) => sum + (row.write_off_date || row.written_off_date ? 0 : toNumber(row.misc_fees)), 0);
     const shippingRunningCost = activeShipmentRows.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0);
     const shippingTaxRunningCost = activeShipmentRows.reduce((sum, row) => sum + shipmentTaxTotal(row), 0);
-    const customerReturnFee = activeSoldRows.reduce(
+    const customerReturnFee = activeReturnFeeRows.reduce(
       (sum, row) =>
         sum +
         toNumber(row.return_shipping_fee) +
@@ -2467,8 +2505,8 @@ export default function DashboardPage() {
       0
     );
     const fbmShippingFee = activeSoldRows.reduce((sum, row) => sum + (row.fbm_shipping_fee != null ? toNumber(row.fbm_shipping_fee) : toNumber(row.ship_fee)), 0);
-    const writeOffCost = activeWrittenOffRows.reduce(
-      (sum, row) => sum + rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row),
+    const writeOffCost = activeWrittenOffFeeRows.reduce(
+      (sum, row) => sum + toNumber(row.misc_fees),
       0
     );
     const loanInterestCost = activeFinanceRows
@@ -2580,15 +2618,15 @@ export default function DashboardPage() {
         footer: "Net profit / loss = Sales - Cost of goods - Business running expenses.",
       },
     };
-  }, [activeExpenseRows, activeFinanceRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows, activePurchaseRows, prototypeExpenseBreakdown, prototypeFixedAssetBreakdown]);
+  }, [activeExpenseRows, activeFinanceRows, activeReturnFeeRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows, activePurchaseRows, prototypeExpenseBreakdown, prototypeFixedAssetBreakdown]);
 
   const prototypePlCardList = useMemo(
     () => [
       prototypePlCards.sales,
       prototypePlCards.cogs,
+      prototypePlCards.fixed_assets,
       prototypePlCards.expenses,
       prototypePlCards.final_pl,
-      prototypePlCards.fixed_assets,
     ],
     [prototypePlCards]
   );

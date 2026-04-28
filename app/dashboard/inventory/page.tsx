@@ -146,30 +146,6 @@ function fmtDate(iso: string | null) {
   return `${day}-${m}-${y}`;
 }
 
-function parseDateForFilter(dateStr: string | null | undefined) {
-  if (!dateStr) return null;
-
-  const raw = String(dateStr).trim();
-  const firstPart = raw.slice(0, 10);
-
-  const isoMatch = firstPart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (isoMatch) {
-    const [, y, m, d] = isoMatch;
-    const parsed = new Date(Number(y), Number(m) - 1, Number(d));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  const ukMatch = firstPart.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (ukMatch) {
-    const [, d, m, y] = ukMatch;
-    const parsed = new Date(Number(y), Number(m) - 1, Number(d));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  const parsed = new Date(firstPart + "T00:00:00");
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
 function daysBetween(startIso: string | null, endIso: string) {
   if (!startIso) return 0;
   const start = new Date(`${String(startIso).slice(0, 10)}T00:00:00`);
@@ -622,8 +598,8 @@ function getFyBounds(label: string) {
 function inSelectedTaxYear(dateStr: string | null | undefined, fyLabel?: string | null) {
   if (!dateStr) return true;
 
-  const dt = parseDateForFilter(dateStr);
-  if (!dt) return true;
+  const dt = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(dt.getTime())) return true;
 
   const activeFyLabel = isValidTaxYearLabel(fyLabel) ? fyLabel : getCurrentFyLabel();
   const bounds = getFyBounds(activeFyLabel);
@@ -633,8 +609,8 @@ function inSelectedTaxYear(dateStr: string | null | undefined, fyLabel?: string 
 function inSelectedRange(dateStr: string | null | undefined, range: RangeKey, fyLabel?: string | null) {
   if (!dateStr) return true;
 
-  const dt = parseDateForFilter(dateStr);
-  if (!dt) return true;
+  const dt = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(dt.getTime())) return true;
 
   const today = new Date();
   const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
@@ -1150,7 +1126,6 @@ export default function InventoryPage() {
   const [writeOffOutcome, setWriteOffOutcome] = useState<"none" | "dispose" | "return_to_me">(
     "none"
   );
-  const [writeOffExtraCostStr, setWriteOffExtraCostStr] = useState("0");
   const [writeOffDate, setWriteOffDate] = useState(todayISO());
 
   const [restoreOpen, setRestoreOpen] = useState(false);
@@ -1795,7 +1770,6 @@ export default function InventoryPage() {
 
   function getRowDateForRangeRaw(row: PurchaseWithProduct) {
     if (row.status === "sold") return row.order_date ?? row.created_at;
-    if (row.status === "written_off") return row.write_off_date ?? row.created_at;
     if (row.status === "awaiting_refund" || row.status === "refunded") return row.returned_date ?? row.created_at;
     if (row.status === "selling") return row.created_at;
     if (row.status === "sent_to_amazon") return row.created_at;
@@ -2240,8 +2214,6 @@ export default function InventoryPage() {
         return row.purchase_date ?? "";
       case "delivery_date":
         return row.delivery_date ?? "";
-      case "write_off_date":
-        return row.write_off_date ?? "";
       case "last_return_date":
         return row.last_return_date ?? "";
       case "asin":
@@ -3726,7 +3698,6 @@ const safeTracking = boxTrackingNo.trim() || "";
     setSelectedPurchaseId(purchaseId);
     setWriteOffReasonText("");
     setWriteOffOutcome("none");
-    setWriteOffExtraCostStr("0");
     setWriteOffDate(todayISO());
     setWriteOffOpen(true);
   }
@@ -3736,16 +3707,12 @@ const safeTracking = boxTrackingNo.trim() || "";
 
     const row = purchases.find((p) => p.id === selectedPurchaseId) ?? null;
     const reason = writeOffReasonText.trim();
-    const extraCost = parseDecimalOrZero(writeOffExtraCostStr);
     const effectiveWriteOffDate = writeOffDate?.trim() ? writeOffDate : todayISO();
 
     if (!reason) {
       alert("Write-off reason is required.");
       return;
     }
-
-    const currentMisc = Number(row?.misc_fees ?? 0);
-    const nextMisc = currentMisc + extraCost;
 
     const outcomeText =
       writeOffOutcome === "dispose"
@@ -3763,7 +3730,6 @@ const safeTracking = boxTrackingNo.trim() || "";
         write_off_reason: finalReason,
         write_off_date: effectiveWriteOffDate,
         tax_year: computeUkTaxYear(effectiveWriteOffDate),
-        misc_fees: nextMisc,
       })
       .eq("id", selectedPurchaseId);
 
@@ -3775,7 +3741,6 @@ const safeTracking = boxTrackingNo.trim() || "";
     setWriteOffOpen(false);
     setWriteOffReasonText("");
     setWriteOffOutcome("none");
-    setWriteOffExtraCostStr("0");
     setWriteOffDate(todayISO());
     await loadAll();
   }
@@ -3846,7 +3811,9 @@ const safeTracking = boxTrackingNo.trim() || "";
     setSoldAmazonFeesStr(
       isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
     );
-    setSoldMiscFeesStr(isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
+    const rowWriteOffFee = 0;
+    const rowMiscOnly = Math.max(0, Number(row?.misc_fees ?? 0) - rowWriteOffFee);
+    setSoldMiscFeesStr(isExistingSold ? String(rowMiscOnly) : "0");
     setSoldFbmShippingFeeStr(isExistingSold ? String(Number(row?.fbm_shipping_fee ?? 0)) : "0");
     setSoldFbmTrackingNo(isExistingSold ? String(row?.fbm_tracking_no ?? "") : "");
     setSoldOrderDate(row?.order_date ?? todayISO());
@@ -4071,7 +4038,10 @@ const writtenOffCostBreakdown = useMemo(() => {
     const productCost = Number(soldTargetRow?.unit_cost ?? 0);
     const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
     const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
-    const miscCost = Number(soldTargetRow?.misc_fees ?? 0);
+    const storedMiscCost = Number(soldTargetRow?.misc_fees ?? 0);
+    const hasWriteOffHistory = Boolean(soldTargetRow?.write_off_reason || soldTargetRow?.write_off_date);
+    const writeOffFee = 0;
+    const miscCost = storedMiscCost;
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShippingFee = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
     const amazonFees = Number(soldTargetRow?.amazon_fees ?? 0);
@@ -4094,6 +4064,7 @@ const writtenOffCostBreakdown = useMemo(() => {
       shippingCost +
       amazonInboundPerItem +
       miscCost +
+      writeOffFee +
       returnShippingCost +
       existingFbmShippingFee +
       amazonFees;
@@ -4104,6 +4075,7 @@ const writtenOffCostBreakdown = useMemo(() => {
       shippingCost,
       amazonInboundPerItem,
       miscCost,
+      writeOffFee,
       returnShippingCost,
       existingFbmShippingFee,
       amazonFees,
@@ -4126,9 +4098,11 @@ const writtenOffCostBreakdown = useMemo(() => {
     const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
     const amazonInbound = soldCostBreakdown.amazonInboundPerItem;
     const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
+    const existingWriteOffFee = soldCostBreakdown.writeOffFee;
+    const existingMiscOnly = Math.max(0, existingMisc - existingWriteOffFee);
     const existingReturnShip = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShip = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
-    const previewMiscFees = soldTargetRow?.status === "sold" ? enteredMiscFees : existingMisc + enteredMiscFees;
+    const previewMiscFees = soldTargetRow?.status === "sold" ? enteredMiscFees : existingMiscOnly + enteredMiscFees;
 
     const previewFbmShipping = soldMode === "FBM" ? newFbmShippingFee : existingFbmShip;
 
@@ -4138,6 +4112,7 @@ const baseCostExAmazonFees =
   shippingCost +
   amazonInbound +
   previewMiscFees +
+  existingWriteOffFee +
   existingReturnShip +
   previewFbmShipping;
 
@@ -4160,6 +4135,7 @@ const baseCostExAmazonFees =
     soldMode,
     soldTargetRow,
     soldCostBreakdown.amazonInboundPerItem,
+    soldCostBreakdown.writeOffFee,
   ]);
 
   const displayedSoldTotalCost = soldEditMode ? soldPreview.totalCost : soldCostBreakdown.landedCost;
@@ -4175,8 +4151,10 @@ const baseCostExAmazonFees =
     soldEditMode
       ? (soldTargetRow?.status === "sold"
           ? parseDecimalOrZero(soldMiscFeesStr)
-          : Number(soldTargetRow?.misc_fees ?? 0) + parseDecimalOrZero(soldMiscFeesStr))
-      : Number(soldTargetRow?.misc_fees ?? 0);
+          : soldCostBreakdown.miscCost + parseDecimalOrZero(soldMiscFeesStr))
+      : soldCostBreakdown.miscCost;
+
+  const displayedSoldWriteOffFee = soldCostBreakdown.writeOffFee;
 
   const displayedSoldFbmShipping =
     soldEditMode
@@ -4270,9 +4248,11 @@ async function confirmSold() {
   }
 
   const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
+  const existingWriteOffFee = soldCostBreakdown.writeOffFee;
+  const existingMiscOnly = Math.max(0, existingMisc - existingWriteOffFee);
   const existingReturnShip = Number(soldTargetRow?.return_shipping_fee ?? 0);
   const existingFbmShipping = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
-  const nextMisc = isEditingExistingSoldItem ? enteredMiscFees : existingMisc + enteredMiscFees;
+  const nextMisc = isEditingExistingSoldItem ? existingWriteOffFee + enteredMiscFees : existingWriteOffFee + existingMiscOnly + enteredMiscFees;
   const nextFbmShipping = soldMode === "FBM" ? newFbmShippingFee : existingFbmShipping;
 
   const productCost = Number(soldTargetRow?.unit_cost ?? 0);
@@ -4743,6 +4723,7 @@ async function confirmSold() {
       ["Ship to Amazon", money(soldCostBreakdown.amazonInboundPerItem)],
       ["Amazon Fees", money(soldCostBreakdown.amazonFees)],
       ["Misc Cost", money(soldCostBreakdown.miscCost)],
+      ["Write Off Fee", money(soldCostBreakdown.writeOffFee)],
       ["Return Fees", money(soldCostBreakdown.returnShippingCost)],
       ["FBM Shipping", money(soldCostBreakdown.existingFbmShippingFee)],
       ["Total Cost Basis", money(displayedSoldTotalCost)],
@@ -5792,8 +5773,8 @@ async function confirmSold() {
                   ) : isWrittenOffFilter ? (
                     <>
                       <SortableTh
-                        label="Written Off Date"
-                        sortKey="write_off_date"
+                        label="Order ID"
+                        sortKey="order_no"
                         activeKey={purchaseSortKey}
                         direction={purchaseSortDirection}
                         onToggle={togglePurchaseSort}
@@ -7610,6 +7591,7 @@ async function confirmSold() {
                       <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(soldCostBreakdown.amazonInboundPerItem)}</b></div>
                       <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(displayedSoldAmazonFees)}</b></div>
                       <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(displayedSoldMiscCost)}</b></div>
+                      <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(displayedSoldWriteOffFee)}</b></div>
                       <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(soldCostBreakdown.returnShippingCost)}</b></div>
                       <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(displayedSoldFbmShipping)}</b></div>
                       <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(displayedSoldTotalCost)}</b></div>
@@ -7979,19 +7961,6 @@ async function confirmSold() {
                   />
                 </div>
 
-                <div>
-                  <div className={fieldLabel()}>Extra cost (£)</div>
-                  <input
-                    className={inputClass()}
-                    inputMode="decimal"
-                    value={writeOffExtraCostStr}
-                    onChange={(e) => setWriteOffExtraCostStr(sanitizeDecimalInput(e.target.value))}
-                    placeholder="0.00"
-                  />
-                  <div className="mt-1 text-[11px] text-neutral-500">
-                    This gets added to Written Off £ and stays accumulative.
-                  </div>
-                </div>
 
                 <div className="flex justify-end gap-2">
                   <button type="button" className={buttonClass()} onClick={() => setWriteOffOpen(false)}>
@@ -8512,7 +8481,7 @@ async function confirmSold() {
                       </div>
                     </div>
 
-                    <div className="grid gap-4 xl:grid-cols-[0.85fr_1.55fr]">
+                    <div className="grid gap-4 xl:grid-cols-[1.05fr_1.35fr]">
                       <div className="rounded-xl border bg-neutral-50 p-4">
                         <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                         <div className="mt-3 space-y-2 text-sm text-neutral-800">
