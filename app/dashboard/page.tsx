@@ -146,6 +146,7 @@ type MonthlyPerformanceRow = {
   refunds: number;
   writeOff: number;
   misc: number;
+  expenses: number;
   totalCost: number;
   sales: number;
   profitLoss: number;
@@ -336,6 +337,8 @@ function financeTypeLabel(type: string | null | undefined) {
     case "personal_withdrawal":
       return "Personal Withdrawal";
     case "tax_payment":
+    case "tax":
+    case "tax payment":
       return "Tax Payment";
     case "corporation_tax":
     case "corporation_tax_payment":
@@ -347,6 +350,32 @@ function financeTypeLabel(type: string | null | undefined) {
     default:
       return String(type ?? "Other").trim() || "Other";
   }
+}
+
+function isLoanInterestFinanceRow(row: FinanceRow) {
+  const type = String(row.transaction_type ?? row.type ?? "").trim().toLowerCase();
+  const label = `${row.category ?? ""} ${row.description ?? ""} ${row.notes ?? ""}`.toLowerCase();
+  return type === "bank_loan_interest" || (label.includes("loan") && label.includes("interest"));
+}
+
+function isTaxPaymentFinanceRow(row: FinanceRow) {
+  const type = String(row.transaction_type ?? row.type ?? "").trim().toLowerCase();
+  const label = `${row.category ?? ""} ${row.description ?? ""} ${row.notes ?? ""} ${row.reference ?? ""}`.toLowerCase();
+  return (
+    type === "tax_payment" ||
+    type === "corporation_tax" ||
+    type === "corporation_tax_payment" ||
+    type === "vat_payment" ||
+    type === "hmrc_payment" ||
+    type === "tax" ||
+    type.includes("tax") ||
+    type.includes("hmrc") ||
+    type.includes("vat") ||
+    label.includes("tax payment") ||
+    label.includes("corporation tax") ||
+    label.includes("hmrc") ||
+    label.includes("vat payment")
+  );
 }
 
 function statusPillColor(s: "awaiting_delivery" | "processing" | "sent_to_amazon" | "selling" | "sold" | "written_off") {
@@ -382,6 +411,12 @@ function financeDirectionFromType(type: string | null | undefined): "in" | "out"
     case "corporation_tax_payment":
     case "vat_payment":
     case "hmrc_payment":
+    case "tax":
+    case "tax payment":
+    case "corporation tax":
+    case "corporation tax payment":
+    case "vat payment":
+    case "hmrc payment":
       return "out";
     default:
       return "other";
@@ -1175,6 +1210,10 @@ function shipmentBaseShippingTotal(row: Record<string, any>): number {
   return gross;
 }
 
+function shipmentTotalWithTax(row: Record<string, any>): number {
+  return moneyValue(shipmentBaseShippingTotal(row) + shipmentTaxTotal(row));
+}
+
 function rowValueAtCost(row: Record<string, any>): number {
   const storedTotal = rowStoredTotalCost(row);
   if (storedTotal > 0) return storedTotal;
@@ -1187,9 +1226,23 @@ function rowTurnover(row: Record<string, any>): number {
 
 function parseDate(value: unknown): Date | null {
   if (!value) return null;
-  const s = String(value).slice(0, 10);
-  const d = new Date(`${s}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
+  const raw = String(value).trim();
+  const s = raw.slice(0, 10);
+
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    const d = new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const ukMatch = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ukMatch) {
+    const d = new Date(Number(ukMatch[3]), Number(ukMatch[2]) - 1, Number(ukMatch[1]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : startOfDay(d);
 }
 
 function startOfDay(d: Date) {
@@ -2288,6 +2341,13 @@ export default function DashboardPage() {
     [shipmentRows, rangeBounds]
   );
 
+  const activeFinanceRows = useMemo(() => {
+    return financeRows.filter((row) => {
+      const rowDate = parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at);
+      return inDateRange(rowDate, rangeBounds.start, rangeBounds.end);
+    });
+  }, [financeRows, rangeBounds]);
+
   const prototypeFixedAssetBreakdown = useMemo(() => {
     const grouped = new Map<string, number>();
 
@@ -2343,6 +2403,9 @@ export default function DashboardPage() {
       (sum, row) => sum + rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row),
       0
     );
+    const loanInterestTotal = activeFinanceRows
+      .filter(isLoanInterestFinanceRow)
+      .reduce((sum, row) => sum + safeNumber(row.amount), 0);
 
     addRow("Products Page", "Products", "Amazon fees", amazonFeesTotal);
     addRow("Products Page", "Products", "Miscellaneous product cost", miscProductCostTotal);
@@ -2351,6 +2414,7 @@ export default function DashboardPage() {
     addRow("Inventory Page", "Inventory", "Customer Return Fee", customerReturnFeeTotal);
     addRow("Inventory Page", "Inventory", "FBM Shipment Fee", fbmShippingFeeTotal);
     addRow("Inventory Page", "Inventory", "Write Off", writeOffTotal);
+    addRow("Finance Page", "Finance", "Loan Interest", loanInterestTotal);
 
     activeExpenseRows
       .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() !== "equipment")
@@ -2371,7 +2435,7 @@ export default function DashboardPage() {
       if (a.mainCategory !== b.mainCategory) return a.mainCategory.localeCompare(b.mainCategory);
       return b.value - a.value;
     });
-  }, [activeExpenseRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows]);
+  }, [activeExpenseRows, activeFinanceRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows]);
 
   const prototypePlCards = useMemo<Record<PrototypePLCardKey, PrototypePLCardData>>(() => {
     const sales = activeSoldRows.reduce((sum, row) => sum + rowTurnover(row), 0);
@@ -2407,6 +2471,9 @@ export default function DashboardPage() {
       (sum, row) => sum + rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row),
       0
     );
+    const loanInterestCost = activeFinanceRows
+      .filter(isLoanInterestFinanceRow)
+      .reduce((sum, row) => sum + safeNumber(row.amount), 0);
     const otherOperatingCost = activeExpenseRows
       .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() !== "equipment")
       .reduce((sum, row) => sum + toNumber(row.amount), 0);
@@ -2418,6 +2485,7 @@ export default function DashboardPage() {
       customerReturnFee +
       fbmShippingFee +
       writeOffCost +
+      loanInterestCost +
       otherOperatingCost;
     const grossProfit = sales - cogs;
     const finalProfit = grossProfit - operatingCost;
@@ -2512,7 +2580,7 @@ export default function DashboardPage() {
         footer: "Net profit / loss = Sales - Cost of goods - Business running expenses.",
       },
     };
-  }, [activeExpenseRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows, activePurchaseRows, prototypeExpenseBreakdown, prototypeFixedAssetBreakdown]);
+  }, [activeExpenseRows, activeFinanceRows, activeShipmentRows, activeSoldRows, activeWrittenOffRows, activePurchaseRows, prototypeExpenseBreakdown, prototypeFixedAssetBreakdown]);
 
   const prototypePlCardList = useMemo(
     () => [
@@ -2562,12 +2630,18 @@ export default function DashboardPage() {
       );
 
       const unitsSold = soldRows.reduce((sum, row) => sum + Math.max(1, rowQty(row)), 0);
-      const amazonFees = soldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0);
-      const productCost = soldRows.reduce(
-        (sum, row) => sum + toNumber(row.unit_cost) * Math.max(1, rowQty(row)),
-        0
+      const purchaseRowsForMonth = purchaseRows.filter((row) =>
+        inDateRange(parseDate(row.purchase_date ?? row.created_at), month.start, month.end)
       );
-      const shipments = soldRows.reduce((sum, row) => sum + toNumber(row.shipping_cost) + toNumber(row.tax_amount), 0);
+      const shipmentRowsForMonth = shipmentRows.filter((row) =>
+        inDateRange(parseDate(row.shipment_date ?? row.sent_date ?? row.shipped_date ?? row.created_at), month.start, month.end)
+      );
+
+      const amazonFees = moneyValue(soldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0));
+      const productCost = moneyValue(
+        purchaseRowsForMonth.reduce((sum, row) => sum + rowValueAtCost(row), 0)
+      );
+      const shipments = moneyValue(shipmentRowsForMonth.reduce((sum, row) => sum + shipmentTotalWithTax(row), 0));
       const refunds = soldRows.reduce(
         (sum, row) =>
           sum +
@@ -2578,13 +2652,20 @@ export default function DashboardPage() {
       );
       const writeOff = writeOffRows.reduce((sum, row) => sum + rowValueAtCost(row), 0);
       const misc = soldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
+      const expenseRowsForMonth = allExpenseRows.filter((row) =>
+        inDateRange(parseDate(row.expense_date), month.start, month.end)
+      );
+      const expenses = moneyValue(
+        expenseRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0)
+      );
+      const fixedAssets = 0;
       const sales = soldRows.reduce((sum, row) => sum + toNumber(row.sold_amount), 0);
       const amzPayout =
         soldRows.reduce((sum, row) => sum + toNumber(row.amazon_payout), 0) ||
         payoutRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0);
 
-      const totalCost = amazonFees + productCost + shipments + refunds + writeOff + misc;
-      const profitLoss = sales - totalCost;
+      const totalCost = moneyValue(amazonFees + productCost + shipments + refunds + writeOff + misc + expenses);
+      const profitLoss = moneyValue(sales - totalCost);
       const roi = totalCost > 0 ? (profitLoss / totalCost) * 100 : null;
 
       const comparisonBounds = index > 0 ? months[index - 1] : getPreviousCalendarMonthBounds(month.start);
@@ -2609,6 +2690,8 @@ export default function DashboardPage() {
         refunds,
         writeOff,
         misc,
+        expenses,
+        fixedAssets,
         totalCost,
         sales,
         profitLoss,
@@ -2617,7 +2700,7 @@ export default function DashboardPage() {
         amzPayout,
       };
     });
-  }, [fyLabel, payoutRows, purchaseRows]);
+  }, [allExpenseRows, fyLabel, payoutRows, purchaseRows, shipmentRows]);
 
   const profitTrendData = useMemo(
     () =>
@@ -2626,7 +2709,7 @@ export default function DashboardPage() {
         sales: Number(row.sales.toFixed(2)),
         profit: Number(row.profitLoss.toFixed(2)),
         purchases: Number(row.productCost.toFixed(2)),
-        expenses: Number((row.amazonFees + row.shipments + row.refunds + row.writeOff + row.misc).toFixed(2)),
+        expenses: Number((row.amazonFees + row.shipments + row.refunds + row.writeOff + row.misc + row.expenses).toFixed(2)),
         units: row.unitsSold,
         payouts: Number(row.amzPayout.toFixed(2)),
         cogs: Number(row.totalCost.toFixed(2)),
@@ -2657,6 +2740,8 @@ export default function DashboardPage() {
         acc.refunds += row.refunds;
         acc.writeOff += row.writeOff;
         acc.misc += row.misc;
+        acc.expenses += row.expenses;
+        acc.fixedAssets += row.fixedAssets;
         acc.totalCost += row.totalCost;
         acc.sales += row.sales;
         acc.profitLoss += row.profitLoss;
@@ -2671,6 +2756,8 @@ export default function DashboardPage() {
         refunds: 0,
         writeOff: 0,
         misc: 0,
+        expenses: 0,
+        fixedAssets: 0,
         totalCost: 0,
         sales: 0,
         profitLoss: 0,
@@ -2721,6 +2808,7 @@ export default function DashboardPage() {
       { metric: "Refunds", value: Number(yearlyPerformanceSummary.refunds.toFixed(2)) },
       { metric: "Write Off", value: Number(yearlyPerformanceSummary.writeOff.toFixed(2)) },
       { metric: "Misc", value: Number(yearlyPerformanceSummary.misc.toFixed(2)) },
+      { metric: "Expenses", value: Number(yearlyPerformanceSummary.expenses.toFixed(2)) },
       { metric: "AMZ Payout", value: Number(yearlyPerformanceSummary.amzPayout.toFixed(2)) },
       { metric: "Total Cost", value: Number(yearlyPerformanceSummary.totalCost.toFixed(2)) },
     ],
@@ -4022,7 +4110,7 @@ const exportSystemKpiHistoryPdf = () => {
   const prevFyFundingOutSummary = useMemo(
     () =>
       prevFyFinanceRows
-        .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "out")
+        .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "out" || isTaxPaymentFinanceRow(row))
         .reduce((sum, row) => sum + safeNumber(row.amount), 0),
     [prevFyFinanceRows]
   );
@@ -4145,6 +4233,11 @@ const exportSystemKpiHistoryPdf = () => {
           .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() !== "equipment")
           .reduce((sum, row) => sum + toNumber(row.amount), 0)
       );
+      const loanInterestCost = moneyValue(
+        financeRowsForYear
+          .filter(isLoanInterestFinanceRow)
+          .reduce((sum, row) => sum + safeNumber(row.amount), 0)
+      );
 
       const runningExpenses = moneyValue(
         amazonFees +
@@ -4154,6 +4247,7 @@ const exportSystemKpiHistoryPdf = () => {
         customerReturnFee +
         fbmShippingFee +
         writeOffCost +
+        loanInterestCost +
         otherOperatingCost
       );
 
@@ -4165,7 +4259,7 @@ const exportSystemKpiHistoryPdf = () => {
 
       const financeOut = moneyValue(
         financeRowsForYear
-          .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "out")
+          .filter((row) => (financeDirectionFromType(row.transaction_type ?? row.type) === "out" || isTaxPaymentFinanceRow(row)) && !isLoanInterestFinanceRow(row))
           .reduce((sum, row) => sum + safeNumber(row.amount), 0)
       );
 
@@ -4184,13 +4278,6 @@ const exportSystemKpiHistoryPdf = () => {
     () => prototypeBalanceByYear.get(prevFyLabel)?.closingBalance ?? 0,
     [prevFyLabel, prototypeBalanceByYear]
   );
-
-  const activeFinanceRows = useMemo(() => {
-    return financeRows.filter((row) => {
-      const rowDate = parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at);
-      return inDateRange(rowDate, rangeBounds.start, rangeBounds.end);
-    });
-  }, [financeRows, rangeBounds]);
 
   const financeBreakdown = useMemo(() => {
     const categories = ["Director", "Loans", "Dividends", "Salary"] as const;
@@ -4218,7 +4305,7 @@ const exportSystemKpiHistoryPdf = () => {
   );
 
   const fundingOutRows = useMemo(
-    () => activeFinanceRows.filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "out"),
+    () => activeFinanceRows.filter((row) => (financeDirectionFromType(row.transaction_type ?? row.type) === "out" || isTaxPaymentFinanceRow(row)) && !isLoanInterestFinanceRow(row)),
     [activeFinanceRows]
   );
 
@@ -5431,6 +5518,7 @@ const exportSystemKpiHistoryPdf = () => {
             `Refunds: ${money(row.refunds)}`,
             `Write Off: ${money(row.writeOff)}`,
             `Miscellaneous: ${money(row.misc)}`,
+            `Expenses: ${money(row.expenses)}`,
             `Total Cost: ${money(row.totalCost)}`,
             `Sales: ${money(row.sales)}`,
             `P/L: ${money(row.profitLoss)}`,
@@ -5544,6 +5632,7 @@ const exportSystemKpiHistoryPdf = () => {
             "Refunds",
             "Write Off",
             "Miscellaneous",
+            "Expenses",
             "Total Cost",
             "Sales",
             "P/L",
@@ -5560,6 +5649,7 @@ const exportSystemKpiHistoryPdf = () => {
             money(row.refunds),
             money(row.writeOff),
             money(row.misc),
+            money(row.expenses),
             money(row.totalCost),
             money(row.sales),
             money(row.profitLoss),
@@ -6308,6 +6398,7 @@ const exportSystemKpiHistoryPdf = () => {
                           <th className={monthHeadClass()}>Refunds</th>
                           <th className={monthHeadClass()}>Write Off</th>
                           <th className={monthHeadClass()}>Miscellaneous</th>
+                          <th className={monthHeadClass()}>Expenses</th>
                           <th className={monthHeadClass()}>Total Cost</th>
                           <th className={monthHeadClass()}>Sales</th>
                           <th className={monthHeadClass()}>P/L</th>
@@ -6329,6 +6420,7 @@ const exportSystemKpiHistoryPdf = () => {
                             <td className={monthCellClass()}>{money(row.refunds)}</td>
                             <td className={monthCellClass()}>{money(row.writeOff)}</td>
                             <td className={monthCellClass()}>{money(row.misc)}</td>
+                            <td className={monthCellClass()}>{money(row.expenses)}</td>
                             <td className="px-4 py-3 text-center text-xs font-semibold text-neutral-900">
                               {money(row.totalCost)}
                             </td>
@@ -6425,6 +6517,7 @@ const exportSystemKpiHistoryPdf = () => {
                         <th className={monthHeadClass()}>Refunds</th>
                         <th className={monthHeadClass()}>Write Off</th>
                         <th className={monthHeadClass()}>Miscellaneous</th>
+                        <th className={monthHeadClass()}>Expenses</th>
                         <th className={monthHeadClass()}>Total Cost</th>
                         <th className={monthHeadClass()}>Sales</th>
                         <th className={monthHeadClass()}>P/L</th>
@@ -6445,6 +6538,7 @@ const exportSystemKpiHistoryPdf = () => {
                         <td className={monthCellClass()}>{money(yearlyPerformanceSummary.refunds)}</td>
                         <td className={monthCellClass()}>{money(yearlyPerformanceSummary.writeOff)}</td>
                         <td className={monthCellClass()}>{money(yearlyPerformanceSummary.misc)}</td>
+                        <td className={monthCellClass()}>{money(yearlyPerformanceSummary.expenses)}</td>
                         <td className="px-4 py-3 text-center text-xs font-semibold text-neutral-900">
                           {money(yearlyPerformanceSummary.totalCost)}
                         </td>

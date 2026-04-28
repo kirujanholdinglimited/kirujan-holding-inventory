@@ -160,16 +160,11 @@ function normalizeASIN(input: string) {
 }
 
 function titleCaseEveryWord(input: string) {
-  const hasTrailingSpace = input.endsWith(" ");
-  const parts = input.split(" ");
-  const mapped = parts.map((w) => {
-    if (!w) return "";
-    const first = w.charAt(0).toUpperCase();
-    const rest = w.slice(1).toLowerCase();
+  return input.replace(/\S+/g, (word) => {
+    const first = word.charAt(0).toUpperCase();
+    const rest = word.slice(1).toLowerCase();
     return first + rest;
   });
-  const joined = mapped.join(" ");
-  return hasTrailingSpace ? joined + " " : joined;
 }
 
 function normalizeSingleSpacing(input: string) {
