@@ -5831,7 +5831,7 @@ async function confirmSold() {
                       ].join(" ")}
                       onClick={() => {
                         if (isAwaitingFilter) handleAwaitingRowClick(r.id);
-                        else if (isProcessingFilter) handleProcessingRowClick(r.id, isInBox);
+                        else if (isProcessingFilter) return;
                         else setSelectedPurchaseId(r.id);
                       }}
                       onDoubleClick={() => {
@@ -6036,20 +6036,10 @@ async function confirmSold() {
                             <>
                               <button
                                 type="button"
-                                className={miniBtn()}
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  await revertToAwaiting(r.id);
-                                }}
-                              >
-                                Awaiting Delivery
-                              </button>
-
-                              <button
-                                type="button"
                                 className={miniBtn(true)}
                                 onClick={async (e) => {
                                   e.stopPropagation();
+                                  setSelectedPurchaseId(r.id);
                                   await setInBox(r.id, !isInBox);
                                 }}
                                 disabled={!currentBoxNo}
