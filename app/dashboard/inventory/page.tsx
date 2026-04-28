@@ -1242,6 +1242,8 @@ export default function InventoryPage() {
   const [finaliseErr, setFinaliseErr] = useState<string | null>(null);
   const [finaliseBusy, setFinaliseBusy] = useState(false);
   const [finaliseCheckedIds, setFinaliseCheckedIds] = useState<string[]>([]);
+  const [finaliseItemNotInBoxOpen, setFinaliseItemNotInBoxOpen] = useState(false);
+  const [finaliseItemNotInBoxValue, setFinaliseItemNotInBoxValue] = useState("");
 
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [checkinShipmentId, setCheckinShipmentId] = useState<string | null>(null);
@@ -1503,6 +1505,12 @@ export default function InventoryPage() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
 
+      if (finaliseItemNotInBoxOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        setFinaliseItemNotInBoxOpen(false);
+        return;
+      }
       if (barcodeNotFoundOpen) {
         closeBarcodeNotFoundModal();
         return;
@@ -1579,6 +1587,7 @@ export default function InventoryPage() {
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [
+    finaliseItemNotInBoxOpen,
     barcodeNotFoundOpen,
     deliveredOpen,
     deliveredBusy,
@@ -2135,6 +2144,9 @@ export default function InventoryPage() {
     });
   }, [boxRows]);
 
+  const allFinaliseChecklistScanned =
+    finaliseChecklistRows.length > 0 && finaliseChecklistRows.every((row) => finaliseCheckedIds.includes(row.id));
+
   function getPurchaseSortValue(row: PurchaseWithProduct, key: string) {
     const totals = getPurchaseTotals(row);
     const shipment = getShipmentForPurchase(row);
@@ -2311,6 +2323,7 @@ export default function InventoryPage() {
   useEffect(() => {
     if (status !== "awaiting_delivery") return;
     if (barcodeNotFoundOpen) return;
+    if (finaliseItemNotInBoxOpen) return;
     if (deliveredOpen) return;
     if (addOpen || addCatalogOpen || editOpen || writeOffOpen || restoreOpen || soldOpen || returnOpen) {
       return;
@@ -2427,6 +2440,8 @@ export default function InventoryPage() {
       }
 
       if (finaliseStep === 1) {
+        setAmazonUnitsStr(scanned);
+
         const uncheckedMatch = finaliseChecklistRows.find((row) => {
           if (finaliseCheckedIds.includes(row.id)) return false;
           const productBarcode = normalizeScannerValue(row.product?.barcode);
@@ -2440,6 +2455,11 @@ export default function InventoryPage() {
           setFinaliseErr(null);
           return;
         }
+
+        setFinaliseItemNotInBoxValue(scanned);
+        setFinaliseItemNotInBoxOpen(true);
+        setFinaliseErr(null);
+        return;
       }
 
       if (finaliseStep !== 0) return;
@@ -2530,6 +2550,7 @@ export default function InventoryPage() {
     unitsInBox,
     finaliseChecklistRows,
     finaliseCheckedIds,
+    finaliseItemNotInBoxOpen,
   ]);
 
   const sortedShipments = useMemo(() => {
@@ -6819,7 +6840,11 @@ async function confirmSold() {
                       </div>
                     ) : null}
 
-                    {finaliseChecklistRows.length > 0 ? (
+                    {allFinaliseChecklistScanned ? (
+                      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+                        All items scanned and box ready to be finalised
+                      </div>
+                    ) : finaliseChecklistRows.length > 0 ? (
                       <div className="rounded-xl border bg-white p-3">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700">
@@ -7189,6 +7214,60 @@ async function confirmSold() {
                 </button>
                 <button type="submit" className={buttonClass(true)} disabled={deliveredBusy}>
                   {deliveredBusy ? "Saving…" : "Save Delivery Date"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {finaliseItemNotInBoxOpen ? (
+        <div
+          className={modalBackdrop()}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setFinaliseItemNotInBoxOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border bg-white shadow-sm"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <form
+              className="space-y-4 p-5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setFinaliseItemNotInBoxOpen(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setFinaliseItemNotInBoxOpen(false);
+                }
+              }}
+            >
+              <div>
+                <div className="text-lg font-semibold text-neutral-900">Item is not in the box</div>
+                <div className="mt-1 text-sm text-neutral-600">
+                  Item is not in the box.
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                  Scanned Value
+                </div>
+                <div className="mt-1 break-all text-sm font-medium text-neutral-900">
+                  {finaliseItemNotInBoxValue || "-"}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button type="submit" className={buttonClass(true)} autoFocus>
+                  OK
                 </button>
               </div>
             </form>
