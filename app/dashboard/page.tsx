@@ -1067,8 +1067,7 @@ function toNumber(x: unknown): number {
 
 function moneyValue(n: number): number {
   if (!Number.isFinite(n)) return 0;
-  const pennies = n * 100;
-  return (n >= 0 ? Math.trunc(pennies + Number.EPSILON) : Math.trunc(pennies - Number.EPSILON)) / 100;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
 function rowMiles(row: Record<string, any>): number {
@@ -4105,43 +4104,49 @@ const exportSystemKpiHistoryPdf = () => {
         inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at), bounds.start, bounds.end)
       );
 
-      const sales = soldRows.reduce((sum, row) => sum + rowTurnover(row), 0);
-      const cogs =
-        purchaseRowsForYear.reduce((sum, row) => sum + rowItemCostTotal(row), 0) +
-        purchaseRowsForYear.reduce((sum, row) => sum + rowVatTotal(row), 0) +
-        purchaseRowsForYear.reduce((sum, row) => sum + rowInboundShippingTotal(row), 0);
-
-      const fixedAssets = expenseRowsForYear
-        .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() === "equipment")
-        .reduce((sum, row) => sum + toNumber(row.amount), 0);
-
-      const amazonFees = soldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0);
-      const miscProductCost = soldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
-      const shippingRunningCost = shipmentRowsForYear.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0);
-      const shippingTaxRunningCost = shipmentRowsForYear.reduce((sum, row) => sum + shipmentTaxTotal(row), 0);
-      const customerReturnFee = soldRows.reduce(
-        (sum, row) =>
-          sum +
-          toNumber(row.return_shipping_fee) +
-          toNumber(row.customer_return_fee) +
-          toNumber(row.return_fee_from_customer) +
-          toNumber(row.customer_return_charge) +
-          toNumber(row.return_postage_charge),
-        0
+      const sales = moneyValue(soldRows.reduce((sum, row) => sum + rowTurnover(row), 0));
+      const cogs = moneyValue(
+        purchaseRowsForYear.reduce((sum, row) => sum + rowValueAtCost(row), 0)
       );
-      const fbmShippingFee = soldRows.reduce(
-        (sum, row) => sum + (row.fbm_shipping_fee != null ? toNumber(row.fbm_shipping_fee) : toNumber(row.ship_fee)),
-        0
-      );
-      const writeOffCost = writtenOffRows.reduce(
-        (sum, row) => sum + rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row),
-        0
-      );
-      const otherOperatingCost = expenseRowsForYear
-        .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() !== "equipment")
-        .reduce((sum, row) => sum + toNumber(row.amount), 0);
 
-      const runningExpenses =
+      const fixedAssets = moneyValue(
+        expenseRowsForYear
+          .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() === "equipment")
+          .reduce((sum, row) => sum + toNumber(row.amount), 0)
+      );
+
+      const amazonFees = moneyValue(soldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0));
+      const miscProductCost = moneyValue(soldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0));
+      const shippingRunningCost = moneyValue(shipmentRowsForYear.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0));
+      const shippingTaxRunningCost = moneyValue(shipmentRowsForYear.reduce((sum, row) => sum + shipmentTaxTotal(row), 0));
+      const customerReturnFee = moneyValue(
+        soldRows.reduce(
+          (sum, row) =>
+            sum +
+            toNumber(row.return_shipping_fee) +
+            toNumber(row.customer_return_fee) +
+            toNumber(row.return_fee_from_customer) +
+            toNumber(row.customer_return_charge) +
+            toNumber(row.return_postage_charge),
+          0
+        )
+      );
+      const fbmShippingFee = moneyValue(
+        soldRows.reduce(
+          (sum, row) => sum + (row.fbm_shipping_fee != null ? toNumber(row.fbm_shipping_fee) : toNumber(row.ship_fee)),
+          0
+        )
+      );
+      const writeOffCost = moneyValue(
+        writtenOffRows.reduce((sum, row) => sum + rowValueAtCost(row), 0)
+      );
+      const otherOperatingCost = moneyValue(
+        expenseRowsForYear
+          .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() !== "equipment")
+          .reduce((sum, row) => sum + toNumber(row.amount), 0)
+      );
+
+      const runningExpenses = moneyValue(
         amazonFees +
         miscProductCost +
         shippingRunningCost +
@@ -4149,20 +4154,26 @@ const exportSystemKpiHistoryPdf = () => {
         customerReturnFee +
         fbmShippingFee +
         writeOffCost +
-        otherOperatingCost;
+        otherOperatingCost
+      );
 
-      const financeIn = financeRowsForYear
-        .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "in")
-        .reduce((sum, row) => sum + safeNumber(row.amount), 0);
+      const financeIn = moneyValue(
+        financeRowsForYear
+          .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "in")
+          .reduce((sum, row) => sum + safeNumber(row.amount), 0)
+      );
 
-      const financeOut = financeRowsForYear
-        .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "out")
-        .reduce((sum, row) => sum + safeNumber(row.amount), 0);
+      const financeOut = moneyValue(
+        financeRowsForYear
+          .filter((row) => financeDirectionFromType(row.transaction_type ?? row.type) === "out")
+          .reduce((sum, row) => sum + safeNumber(row.amount), 0)
+      );
 
-      const periodMovement = financeIn - financeOut + sales - cogs - runningExpenses - fixedAssets;
-      const closingBalance = openingBalance + periodMovement;
+      const cleanOpeningBalance = moneyValue(openingBalance);
+      const periodMovement = moneyValue(financeIn - financeOut + sales - cogs - runningExpenses - fixedAssets);
+      const closingBalance = moneyValue(cleanOpeningBalance + periodMovement);
 
-      byYear.set(label, { openingBalance, closingBalance, periodMovement });
+      byYear.set(label, { openingBalance: cleanOpeningBalance, closingBalance, periodMovement });
       openingBalance = closingBalance;
     }
 
@@ -4232,19 +4243,19 @@ const exportSystemKpiHistoryPdf = () => {
   }, [fundingOutRows]);
 
   const prototypeFinanceSummary = useMemo(() => {
-    const financeIn = fundingInSummary.total;
-    const financeOut = fundingOutSummary.total;
-    const netFinance = financeIn - financeOut;
+    const financeIn = moneyValue(fundingInSummary.total);
+    const financeOut = moneyValue(fundingOutSummary.total);
+    const netFinance = moneyValue(financeIn - financeOut);
 
     const sales = prototypePlCards.sales.value;
     const cogs = prototypePlCards.cogs.value;
     const runningExpenses = prototypePlCards.expenses.value;
     const fixedAssets = prototypePlCards.fixed_assets.value;
 
-    const openingBalance = prevFyDisplayedClosingBalance;
-    const periodMovement = financeIn - financeOut + sales - cogs - runningExpenses - fixedAssets;
-    const netProfit = sales - cogs - runningExpenses;
-    const runningBalanceValue = openingBalance + periodMovement;
+    const openingBalance = moneyValue(prevFyDisplayedClosingBalance);
+    const periodMovement = moneyValue(financeIn - financeOut + sales - cogs - runningExpenses - fixedAssets);
+    const netProfit = moneyValue(sales - cogs - runningExpenses);
+    const runningBalanceValue = moneyValue(openingBalance + periodMovement);
     const closingBalance = runningBalanceValue;
 
     return {
@@ -4256,7 +4267,7 @@ const exportSystemKpiHistoryPdf = () => {
       periodMovement,
       runningBalanceValue,
       closingBalance,
-      previousYearClosingBalance: prevFyDisplayedClosingBalance,
+      previousYearClosingBalance: moneyValue(prevFyDisplayedClosingBalance),
     };
   }, [
     fundingInSummary.total,
