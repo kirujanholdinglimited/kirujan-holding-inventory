@@ -317,12 +317,28 @@ function parseWriteOffDetails(input: string | null) {
     .filter(Boolean);
 
   const outcomePart = parts.find((part) => /^outcome\s*:/i.test(part)) ?? null;
-  const reasonParts = parts.filter((part) => !/^outcome\s*:/i.test(part));
+  const reasonParts = parts.filter(
+    (part) => !/^outcome\s*:/i.test(part) && !/^write\s*off\s*fee\s*:/i.test(part)
+  );
 
   return {
     reason: reasonParts.join(" • ") || raw,
     outcome: outcomePart ? outcomePart.replace(/^outcome\s*:/i, "").trim() : "No extra outcome",
   };
+}
+
+function parseWriteOffFee(input: string | null) {
+  const raw = String(input ?? "");
+  const match = raw.match(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (!match) return 0;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function buildWriteOffReasonWithFee(reason: string, outcomeText: string | null, fee: number) {
+  const parts = [reason.trim(), outcomeText, fee > 0 ? `Write Off Fee: ${fee.toFixed(2)}` : null]
+    .filter(Boolean) as string[];
+  return parts.join(" • ");
 }
 
 function sanitizeDecimalInput(v: string) {
@@ -1126,6 +1142,7 @@ export default function InventoryPage() {
   const [writeOffOutcome, setWriteOffOutcome] = useState<"none" | "dispose" | "return_to_me">(
     "none"
   );
+  const [writeOffExtraCostStr, setWriteOffExtraCostStr] = useState("0");
   const [writeOffDate, setWriteOffDate] = useState(todayISO());
 
   const [restoreOpen, setRestoreOpen] = useState(false);
@@ -3698,6 +3715,7 @@ const safeTracking = boxTrackingNo.trim() || "";
     setSelectedPurchaseId(purchaseId);
     setWriteOffReasonText("");
     setWriteOffOutcome("none");
+    setWriteOffExtraCostStr("0");
     setWriteOffDate(todayISO());
     setWriteOffOpen(true);
   }
@@ -3707,12 +3725,16 @@ const safeTracking = boxTrackingNo.trim() || "";
 
     const row = purchases.find((p) => p.id === selectedPurchaseId) ?? null;
     const reason = writeOffReasonText.trim();
+    const extraCost = parseDecimalOrZero(writeOffExtraCostStr);
     const effectiveWriteOffDate = writeOffDate?.trim() ? writeOffDate : todayISO();
 
     if (!reason) {
       alert("Write-off reason is required.");
       return;
     }
+
+    const previousWriteOffFee = parseWriteOffFee(row?.write_off_reason ?? null);
+    const nextWriteOffFee = previousWriteOffFee + extraCost;
 
     const outcomeText =
       writeOffOutcome === "dispose"
@@ -3721,7 +3743,7 @@ const safeTracking = boxTrackingNo.trim() || "";
           ? "Outcome: Returned To Me"
           : null;
 
-    const finalReason = outcomeText ? `${reason} • ${outcomeText}` : reason;
+    const finalReason = buildWriteOffReasonWithFee(reason, outcomeText, nextWriteOffFee);
 
     const { error } = await supabase
       .from("purchases")
@@ -3741,6 +3763,7 @@ const safeTracking = boxTrackingNo.trim() || "";
     setWriteOffOpen(false);
     setWriteOffReasonText("");
     setWriteOffOutcome("none");
+    setWriteOffExtraCostStr("0");
     setWriteOffDate(todayISO());
     await loadAll();
   }
@@ -3771,8 +3794,8 @@ const safeTracking = boxTrackingNo.trim() || "";
       .from("purchases")
       .update({
         status: nextRestoreStatus,
-        write_off_reason: clearWriteOffFields ? null : restoreRow?.write_off_reason ?? null,
-        write_off_date: clearWriteOffFields ? null : restoreRow?.write_off_date ?? null,
+        write_off_reason: restoreRow?.write_off_reason ?? null,
+        write_off_date: restoreRow?.write_off_date ?? null,
         return_reason: clearReturnFields ? null : restoreRow?.return_reason ?? null,
         returned_date: clearReturnFields ? null : restoreRow?.returned_date ?? null,
         refunded_date: clearReturnFields ? null : restoreRow?.refunded_date ?? null,
@@ -3811,9 +3834,7 @@ const safeTracking = boxTrackingNo.trim() || "";
     setSoldAmazonFeesStr(
       isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
     );
-    const rowWriteOffFee = 0;
-    const rowMiscOnly = Math.max(0, Number(row?.misc_fees ?? 0) - rowWriteOffFee);
-    setSoldMiscFeesStr(isExistingSold ? String(rowMiscOnly) : "0");
+    setSoldMiscFeesStr(isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
     setSoldFbmShippingFeeStr(isExistingSold ? String(Number(row?.fbm_shipping_fee ?? 0)) : "0");
     setSoldFbmTrackingNo(isExistingSold ? String(row?.fbm_tracking_no ?? "") : "");
     setSoldOrderDate(row?.order_date ?? todayISO());
@@ -3949,8 +3970,8 @@ const writtenOffCostBreakdown = useMemo(() => {
   const productCost = Number(writtenOffDetailRow?.unit_cost ?? 0);
   const taxCost = Number(writtenOffDetailRow?.tax_amount ?? 0);
   const shippingCost = Number(writtenOffDetailRow?.shipping_cost ?? 0);
-  const writtenOffCost = Number(writtenOffDetailRow?.misc_fees ?? 0);
-  const miscCost = 0;
+  const writtenOffCost = parseWriteOffFee(writtenOffDetailRow?.write_off_reason ?? null);
+  const miscCost = Number(writtenOffDetailRow?.misc_fees ?? 0);
   const returnShippingCost = Number(writtenOffDetailRow?.return_shipping_fee ?? 0);
   const fbmShippingCost = Number(writtenOffDetailRow?.fbm_shipping_fee ?? 0);
   const amazonFees = Number(writtenOffDetailRow?.amazon_fees ?? 0);
@@ -4038,10 +4059,8 @@ const writtenOffCostBreakdown = useMemo(() => {
     const productCost = Number(soldTargetRow?.unit_cost ?? 0);
     const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
     const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
-    const storedMiscCost = Number(soldTargetRow?.misc_fees ?? 0);
-    const hasWriteOffHistory = Boolean(soldTargetRow?.write_off_reason || soldTargetRow?.write_off_date);
-    const writeOffFee = 0;
-    const miscCost = storedMiscCost;
+    const miscCost = Number(soldTargetRow?.misc_fees ?? 0);
+    const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShippingFee = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
     const amazonFees = Number(soldTargetRow?.amazon_fees ?? 0);
@@ -4098,11 +4117,10 @@ const writtenOffCostBreakdown = useMemo(() => {
     const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
     const amazonInbound = soldCostBreakdown.amazonInboundPerItem;
     const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
-    const existingWriteOffFee = soldCostBreakdown.writeOffFee;
-    const existingMiscOnly = Math.max(0, existingMisc - existingWriteOffFee);
+    const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
     const existingReturnShip = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShip = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
-    const previewMiscFees = soldTargetRow?.status === "sold" ? enteredMiscFees : existingMiscOnly + enteredMiscFees;
+    const previewMiscFees = soldTargetRow?.status === "sold" ? enteredMiscFees : existingMisc + enteredMiscFees;
 
     const previewFbmShipping = soldMode === "FBM" ? newFbmShippingFee : existingFbmShip;
 
@@ -4112,7 +4130,7 @@ const baseCostExAmazonFees =
   shippingCost +
   amazonInbound +
   previewMiscFees +
-  existingWriteOffFee +
+  writeOffFee +
   existingReturnShip +
   previewFbmShipping;
 
@@ -4135,7 +4153,6 @@ const baseCostExAmazonFees =
     soldMode,
     soldTargetRow,
     soldCostBreakdown.amazonInboundPerItem,
-    soldCostBreakdown.writeOffFee,
   ]);
 
   const displayedSoldTotalCost = soldEditMode ? soldPreview.totalCost : soldCostBreakdown.landedCost;
@@ -4151,10 +4168,8 @@ const baseCostExAmazonFees =
     soldEditMode
       ? (soldTargetRow?.status === "sold"
           ? parseDecimalOrZero(soldMiscFeesStr)
-          : soldCostBreakdown.miscCost + parseDecimalOrZero(soldMiscFeesStr))
-      : soldCostBreakdown.miscCost;
-
-  const displayedSoldWriteOffFee = soldCostBreakdown.writeOffFee;
+          : Number(soldTargetRow?.misc_fees ?? 0) + parseDecimalOrZero(soldMiscFeesStr))
+      : Number(soldTargetRow?.misc_fees ?? 0);
 
   const displayedSoldFbmShipping =
     soldEditMode
@@ -4248,11 +4263,9 @@ async function confirmSold() {
   }
 
   const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
-  const existingWriteOffFee = soldCostBreakdown.writeOffFee;
-  const existingMiscOnly = Math.max(0, existingMisc - existingWriteOffFee);
   const existingReturnShip = Number(soldTargetRow?.return_shipping_fee ?? 0);
   const existingFbmShipping = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
-  const nextMisc = isEditingExistingSoldItem ? existingWriteOffFee + enteredMiscFees : existingWriteOffFee + existingMiscOnly + enteredMiscFees;
+  const nextMisc = isEditingExistingSoldItem ? enteredMiscFees : existingMisc + enteredMiscFees;
   const nextFbmShipping = soldMode === "FBM" ? newFbmShippingFee : existingFbmShipping;
 
   const productCost = Number(soldTargetRow?.unit_cost ?? 0);
@@ -4559,6 +4572,7 @@ async function confirmSold() {
   const editLiveCostBreakdown = useMemo(() => {
     const amazonInboundPerItem = getPurchaseTotals(selectedPurchase).amazonInboundPerItem;
     const amazonFees = Number(selectedPurchase?.amazon_fees ?? 0);
+    const writeOffFee = parseWriteOffFee(selectedPurchase?.write_off_reason ?? null);
     const returnFees = Number(selectedPurchase?.return_shipping_fee ?? 0);
     const fbmShipping = Number(selectedPurchase?.fbm_shipping_fee ?? 0);
 
@@ -4577,9 +4591,10 @@ async function confirmSold() {
       shipToAmazon: amazonInboundPerItem,
       amazonFees,
       miscCost: eMisc,
+      writeOffFee,
       returnFees,
       fbmShipping,
-      totalCostBasis: discountedBase + eMisc + amazonInboundPerItem + amazonFees + returnFees + fbmShipping,
+      totalCostBasis: discountedBase + eMisc + amazonInboundPerItem + amazonFees + writeOffFee + returnFees + fbmShipping,
     };
   }, [selectedPurchase, eDiscountType, eUnit, eDiscVal, eQty, eTax, eShip, eMisc]);
 
@@ -6570,9 +6585,9 @@ async function confirmSold() {
                 <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(writtenOffCostBreakdown.amazonInboundPerItem)}</b></div>
                 <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(writtenOffCostBreakdown.amazonFees)}</b></div>
                 <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(writtenOffCostBreakdown.miscCost)}</b></div>
+                <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(writtenOffCostBreakdown.writtenOffCost)}</b></div>
                 <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(writtenOffCostBreakdown.returnShippingCost)}</b></div>
                 <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(writtenOffCostBreakdown.fbmShippingCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Written Off Cost</span><b>{money(writtenOffCostBreakdown.writtenOffCost)}</b></div>
                 <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(writtenOffCostBreakdown.totalCostBasis)}</b></div>
               </div>
             </div>
@@ -7591,7 +7606,7 @@ async function confirmSold() {
                       <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(soldCostBreakdown.amazonInboundPerItem)}</b></div>
                       <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(displayedSoldAmazonFees)}</b></div>
                       <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(displayedSoldMiscCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(displayedSoldWriteOffFee)}</b></div>
+                      <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(soldCostBreakdown.writeOffFee)}</b></div>
                       <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(soldCostBreakdown.returnShippingCost)}</b></div>
                       <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(displayedSoldFbmShipping)}</b></div>
                       <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(displayedSoldTotalCost)}</b></div>
@@ -7961,6 +7976,19 @@ async function confirmSold() {
                   />
                 </div>
 
+                <div>
+                  <div className={fieldLabel()}>Extra cost (£)</div>
+                  <input
+                    className={inputClass()}
+                    inputMode="decimal"
+                    value={writeOffExtraCostStr}
+                    onChange={(e) => setWriteOffExtraCostStr(sanitizeDecimalInput(e.target.value))}
+                    placeholder="0.00"
+                  />
+                  <div className="mt-1 text-[11px] text-neutral-500">
+                    This gets added to Written Off £ and stays accumulative.
+                  </div>
+                </div>
 
                 <div className="flex justify-end gap-2">
                   <button type="button" className={buttonClass()} onClick={() => setWriteOffOpen(false)}>
@@ -8491,6 +8519,7 @@ async function confirmSold() {
                           <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(editLiveCostBreakdown.shipToAmazon)}</b></div>
                           <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(editLiveCostBreakdown.amazonFees)}</b></div>
                           <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(editLiveCostBreakdown.miscCost)}</b></div>
+                          <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(editLiveCostBreakdown.writeOffFee)}</b></div>
                           <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(editLiveCostBreakdown.returnFees)}</b></div>
                           <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(editLiveCostBreakdown.fbmShipping)}</b></div>
                           <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(editLiveCostBreakdown.totalCostBasis)}</b></div>
