@@ -329,14 +329,28 @@ function parseWriteOffDetails(input: string | null) {
 
 function parseWriteOffFee(input: string | null) {
   const raw = String(input ?? "");
-  const match = raw.match(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/i);
-  if (!match) return 0;
-  const n = Number(match[1]);
-  return Number.isFinite(n) ? n : 0;
+  const matches = Array.from(raw.matchAll(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/gi));
+  if (!matches.length) return 0;
+
+  const total = matches.reduce((sum, match) => {
+    const n = Number(match[1]);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+
+  return Number.isFinite(total) ? total : 0;
+}
+
+function removeWriteOffFeeParts(input: string) {
+  return String(input ?? "")
+    .split("•")
+    .map((part) => part.trim())
+    .filter((part) => part && !/^write\s*off\s*fee\s*:/i.test(part))
+    .join(" • ");
 }
 
 function buildWriteOffReasonWithFee(reason: string, outcomeText: string | null, fee: number) {
-  const parts = [reason.trim(), outcomeText, fee > 0 ? `Write Off Fee: ${fee.toFixed(2)}` : null]
+  const cleanReason = removeWriteOffFeeParts(reason).trim();
+  const parts = [cleanReason, outcomeText, fee > 0 ? `Write Off Fee: ${fee.toFixed(2)}` : null]
     .filter(Boolean) as string[];
   return parts.join(" • ");
 }
@@ -3941,7 +3955,7 @@ async function saveWrittenOffDetails() {
       : writtenOffEditOutcome === "return_to_me"
         ? "Outcome: Returned To Me"
         : null;
-  const finalReason = outcomeText ? `${reason} • ${outcomeText}` : reason;
+  const finalReason = buildWriteOffReasonWithFee(reason, outcomeText, cost);
 
   try {
     setWrittenOffEditBusy(true);
