@@ -1102,12 +1102,14 @@ function toNumber(x: unknown): number {
 
 function rowWriteOffFee(row: Record<string, any>): number {
   const raw = String(row.write_off_reason ?? "");
-  const match = raw.match(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/i);
-  if (!match) return 0;
-  const n = Number(match[1]);
+  const matches = Array.from(
+    raw.matchAll(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/gi)
+  );
+  const lastMatch = matches[matches.length - 1];
+  if (!lastMatch) return 0;
+  const n = Number(lastMatch[1]);
   return Number.isFinite(n) ? n : 0;
 }
-
 function moneyValue(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -2641,7 +2643,7 @@ export default function DashboardPage() {
       });
 
       const writeOffRows = purchaseRows.filter((row) => {
-        if (normalizeStatus(row.status) !== "written_off") return false;
+        if (rowWriteOffFee(row) <= 0) return false;
         return inDateRange(parseDate(row.write_off_date ?? row.written_off_date ?? row.removed_date ?? row.updated_at ?? row.created_at), month.start, month.end);
       });
 
