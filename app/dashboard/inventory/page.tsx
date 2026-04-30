@@ -2181,6 +2181,7 @@ export default function InventoryPage() {
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
     const returnShippingFee = Number(row?.return_shipping_fee ?? 0);
     const fbmShippingFee = Number(row?.fbm_shipping_fee ?? 0);
+    const writeOffFee = parseWriteOffFee(row?.write_off_reason ?? null);
 
     return {
       baseTotal,
@@ -2189,22 +2190,25 @@ export default function InventoryPage() {
       amazonFees,
       returnShippingFee,
       fbmShippingFee,
+      writeOffFee,
       processingTotal:
-        baseTotal + miscFees + returnShippingFee + fbmShippingFee + amazonFees,
+        baseTotal + miscFees + returnShippingFee + fbmShippingFee + amazonFees + writeOffFee,
       sellingTotal:
         baseTotal +
         amazonInboundPerItem +
         miscFees +
         returnShippingFee +
         fbmShippingFee +
-        amazonFees,
+        amazonFees +
+        writeOffFee,
       soldTotal:
         baseTotal +
         amazonInboundPerItem +
         miscFees +
         returnShippingFee +
         fbmShippingFee +
-        amazonFees,
+        amazonFees +
+        writeOffFee,
     };
   };
 
@@ -6102,7 +6106,8 @@ async function confirmSold() {
                               Number(r.amazon_fees ?? 0) +
                               Number(r.return_shipping_fee ?? 0) +
                               Number(r.fbm_shipping_fee ?? 0) +
-                              Number(r.misc_fees ?? 0)
+                              Number(r.misc_fees ?? 0) +
+                              parseWriteOffFee(r.write_off_reason ?? null)
                             )}
                           </td>
                           <td className="py-3 pr-4">
