@@ -318,7 +318,10 @@ function parseWriteOffDetails(input: string | null) {
 
   const outcomePart = parts.find((part) => /^outcome\s*:/i.test(part)) ?? null;
   const reasonParts = parts.filter(
-    (part) => !/^outcome\s*:/i.test(part) && !/^write\s*off\s*fee\s*:/i.test(part)
+    (part) =>
+      !/^outcome\s*:/i.test(part) &&
+      !/^write\s*off\s*fee\s*:/i.test(part) &&
+      !/^last\s*write\s*off\s*cost\s*:/i.test(part)
   );
 
   return {
@@ -340,18 +343,42 @@ function parseWriteOffFee(input: string | null) {
   return Number.isFinite(total) ? total : 0;
 }
 
+function parseLastWriteOffCost(input: string | null) {
+  const raw = String(input ?? "");
+  const matches = Array.from(raw.matchAll(/last\s*write\s*off\s*cost\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/gi));
+  const lastMatch = matches.length ? matches[matches.length - 1] : null;
+  if (!lastMatch) return parseWriteOffFee(input);
+
+  const n = Number(lastMatch[1]);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function removeWriteOffFeeParts(input: string) {
   return String(input ?? "")
     .split("•")
     .map((part) => part.trim())
-    .filter((part) => part && !/^write\s*off\s*fee\s*:/i.test(part))
+    .filter(
+      (part) =>
+        part &&
+        !/^write\s*off\s*fee\s*:/i.test(part) &&
+        !/^last\s*write\s*off\s*cost\s*:/i.test(part)
+    )
     .join(" • ");
 }
 
-function buildWriteOffReasonWithFee(reason: string, outcomeText: string | null, fee: number) {
+function buildWriteOffReasonWithFee(
+  reason: string,
+  outcomeText: string | null,
+  fee: number,
+  lastCost: number = fee
+) {
   const cleanReason = removeWriteOffFeeParts(reason).trim();
-  const parts = [cleanReason, outcomeText, fee > 0 ? `Write Off Fee: ${fee.toFixed(2)}` : null]
-    .filter(Boolean) as string[];
+  const parts = [
+    cleanReason,
+    outcomeText,
+    fee > 0 ? `Write Off Fee: ${fee.toFixed(2)}` : null,
+    lastCost > 0 ? `Last Write Off Cost: ${lastCost.toFixed(2)}` : null,
+  ].filter(Boolean) as string[];
   return parts.join(" • ");
 }
 
@@ -3757,7 +3784,7 @@ const safeTracking = boxTrackingNo.trim() || "";
           ? "Outcome: Returned To Me"
           : null;
 
-    const finalReason = buildWriteOffReasonWithFee(reason, outcomeText, nextWriteOffFee);
+    const finalReason = buildWriteOffReasonWithFee(reason, outcomeText, nextWriteOffFee, extraCost);
 
     const { error } = await supabase
       .from("purchases")
@@ -3897,7 +3924,7 @@ useEffect(() => {
   setWrittenOffEditMode(false);
   setWrittenOffEditReason(parsed.reason === "-" ? "" : parsed.reason);
   setWrittenOffEditOutcome(normalizedOutcome as "none" | "dispose" | "return_to_me");
-  setWrittenOffEditCostStr(String(Number(writtenOffDetailRow.misc_fees ?? 0)));
+  setWrittenOffEditCostStr(String(parseLastWriteOffCost(writtenOffDetailRow.write_off_reason ?? null)));
   setWrittenOffEditDate(writtenOffDetailRow.write_off_date ?? todayISO());
 }, [writtenOffDetailOpen, writtenOffDetailRow]);
 
@@ -6667,7 +6694,11 @@ async function confirmSold() {
                   <input
                     className={inputClass()}
                     inputMode="decimal"
-                    value={writtenOffEditMode ? writtenOffEditCostStr : Number(writtenOffDetailRow?.misc_fees ?? 0).toFixed(2)}
+                    value={
+                      writtenOffEditMode
+                        ? writtenOffEditCostStr
+                        : parseLastWriteOffCost(writtenOffDetailRow?.write_off_reason ?? null).toFixed(2)
+                    }
                     onChange={(e) => setWrittenOffEditCostStr(sanitizeDecimalInput(e.target.value))}
                     readOnly={!writtenOffEditMode}
                   />

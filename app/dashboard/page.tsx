@@ -2642,7 +2642,7 @@ export default function DashboardPage() {
 
       const writeOffRows = purchaseRows.filter((row) => {
         if (normalizeStatus(row.status) !== "written_off") return false;
-        return inDateRange(parseDate(row.created_at ?? row.purchase_date), month.start, month.end);
+        return inDateRange(parseDate(row.write_off_date ?? row.written_off_date ?? row.removed_date ?? row.updated_at ?? row.created_at), month.start, month.end);
       });
 
       const payoutRowsForMonth = payoutRows.filter((row) =>
@@ -2670,7 +2670,7 @@ export default function DashboardPage() {
           toNumber(row.return_shipping_fee),
         0
       );
-      const writeOff = writeOffRows.reduce((sum, row) => sum + rowValueAtCost(row), 0);
+      const writeOff = moneyValue(writeOffRows.reduce((sum, row) => sum + rowWriteOffFee(row), 0));
       const miscPurchaseRowsForMonth = purchaseRowsForMonth.filter((row) => normalizeStatus(row.status) !== "sold");
       const misc =
         soldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0) +
