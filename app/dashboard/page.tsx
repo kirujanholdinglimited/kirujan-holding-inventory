@@ -5848,17 +5848,6 @@ const exportSystemKpiHistoryPdf = () => {
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                resetAddPurchaseForm();
-                setAddOpen(true);
-              }}
-              className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-semibold text-white hover:opacity-95"
-            >
-              + Add Purchase
-            </button>
-
             <select
               className="rounded-xl border bg-white px-3 py-2 text-sm"
               value={range}
