@@ -2177,7 +2177,9 @@ export default function InventoryPage() {
   const getPurchaseTotals = (row: PurchaseWithProduct | null | undefined) => {
     const baseTotal = Number(row?.total_cost ?? 0);
     const miscFees = Number(row?.misc_fees ?? 0);
-    const amazonFees = Number(row?.amazon_fees ?? 0);
+    const amazonFees = row?.sale_type === "FBM" && (row?.status === "awaiting_refund" || row?.status === "refunded" || (row?.status !== "sold" && Boolean(row?.last_return_date)))
+      ? 0
+      : Number(row?.amazon_fees ?? 0);
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
     const returnShippingFee = Number(row?.return_shipping_fee ?? 0);
     const fbmShippingFee = Number(row?.fbm_shipping_fee ?? 0);
@@ -3880,7 +3882,11 @@ const safeTracking = boxTrackingNo.trim() || "";
       isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
     );
     setSoldMiscFeesStr(isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
-    setSoldFbmShippingFeeStr(isExistingSold ? String(Number(row?.fbm_shipping_fee ?? 0)) : "0");
+    setSoldFbmShippingFeeStr(
+      isExistingSold || (!isFreshSale && effectiveMode === "FBM")
+        ? String(Number(row?.fbm_shipping_fee ?? 0))
+        : "0"
+    );
     setSoldFbmTrackingNo(isExistingSold ? String(row?.fbm_tracking_no ?? "") : "");
     setSoldOrderDate(row?.order_date ?? todayISO());
     setSoldOpen(true);
@@ -4108,7 +4114,9 @@ const writtenOffCostBreakdown = useMemo(() => {
     const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShippingFee = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
-    const amazonFees = Number(soldTargetRow?.amazon_fees ?? 0);
+    const amazonFees = soldTargetRow?.sale_type === "FBM" && soldTargetRow?.status === "refunded"
+      ? 0
+      : Number(soldTargetRow?.amazon_fees ?? 0);
 
     let amazonInboundPerItem = 0;
     if (soldTargetShipment) {
@@ -4207,7 +4215,7 @@ const baseCostExAmazonFees =
       ? (soldAmazonFeesStr.trim() === ""
           ? Number(soldTargetRow?.amazon_fees ?? 0)
           : parseDecimalOrZero(soldAmazonFeesStr))
-      : Number(soldTargetRow?.amazon_fees ?? 0);
+      : soldCostBreakdown.amazonFees;
 
   const displayedSoldMiscCost =
     soldEditMode
@@ -4250,7 +4258,11 @@ const displayedROI = soldEditMode
       isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
     );
     setSoldMiscFeesStr(isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
-    setSoldFbmShippingFeeStr(isExistingSold ? String(Number(row?.fbm_shipping_fee ?? 0)) : "0");
+    setSoldFbmShippingFeeStr(
+      isExistingSold || (!isFreshSale && effectiveMode === "FBM")
+        ? String(Number(row?.fbm_shipping_fee ?? 0))
+        : "0"
+    );
     setSoldFbmCarrierStr(isExistingSold ? String(row?.tracking_no ?? "") : "");
     setSoldFbmTrackingNo(isExistingSold ? String(row?.fbm_tracking_no ?? "") : "");
     setSoldOrderDate(row?.order_date ?? todayISO());
@@ -4616,7 +4628,9 @@ async function confirmSold() {
 
   const editLiveCostBreakdown = useMemo(() => {
     const amazonInboundPerItem = getPurchaseTotals(selectedPurchase).amazonInboundPerItem;
-    const amazonFees = Number(selectedPurchase?.amazon_fees ?? 0);
+    const amazonFees = selectedPurchase?.sale_type === "FBM" && (selectedPurchase?.status === "awaiting_refund" || selectedPurchase?.status === "refunded" || Boolean(selectedPurchase?.last_return_date))
+      ? 0
+      : Number(selectedPurchase?.amazon_fees ?? 0);
     const writeOffFee = parseWriteOffFee(selectedPurchase?.write_off_reason ?? null);
     const returnFees = Number(selectedPurchase?.return_shipping_fee ?? 0);
     const fbmShipping = Number(selectedPurchase?.fbm_shipping_fee ?? 0);
