@@ -3870,24 +3870,27 @@ const safeTracking = boxTrackingNo.trim() || "";
         ? (row?.sale_type ?? mode)
         : mode
     ) as "FBA" | "FBM";
+    const isReturnedFbmReSale = effectiveMode === "FBM" && Boolean(row?.last_return_date) && !isExistingSold;
 
     setSoldTargetId(purchaseId);
     setSoldMode(effectiveMode);
     setSoldEditMode(!isExistingSold);
 
     setSoldAmountStr(
-      isExistingSold ? String(Number(row?.sold_amount ?? 0)) : isFreshSale ? "0" : String(Number(row?.sold_amount ?? 0))
+      isReturnedFbmReSale ? "0" : isExistingSold ? String(Number(row?.sold_amount ?? 0)) : isFreshSale ? "0" : String(Number(row?.sold_amount ?? 0))
     );
     setSoldAmazonFeesStr(
-      isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
+      isReturnedFbmReSale ? "0" : isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
     );
-    setSoldMiscFeesStr(isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
+    setSoldMiscFeesStr(isReturnedFbmReSale ? "0" : isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
     setSoldFbmShippingFeeStr(
-      isExistingSold || (!isFreshSale && effectiveMode === "FBM")
-        ? String(Number(row?.fbm_shipping_fee ?? 0))
-        : "0"
+      isReturnedFbmReSale
+        ? "0"
+        : isExistingSold || (!isFreshSale && effectiveMode === "FBM")
+          ? String(Number(row?.fbm_shipping_fee ?? 0))
+          : "0"
     );
-    setSoldFbmTrackingNo(isExistingSold ? String(row?.fbm_tracking_no ?? "") : "");
+    setSoldFbmTrackingNo(isExistingSold && !isReturnedFbmReSale ? String(row?.fbm_tracking_no ?? "") : "");
     setSoldOrderDate(row?.order_date ?? todayISO());
     setSoldOpen(true);
   }
@@ -4114,7 +4117,7 @@ const writtenOffCostBreakdown = useMemo(() => {
     const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShippingFee = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
-    const amazonFees = soldTargetRow?.sale_type === "FBM" && soldTargetRow?.status === "refunded"
+    const amazonFees = soldTargetRow?.sale_type === "FBM" && Boolean(soldTargetRow?.last_return_date)
       ? 0
       : Number(soldTargetRow?.amazon_fees ?? 0);
 
@@ -4208,38 +4211,55 @@ const baseCostExAmazonFees =
     soldCostBreakdown.amazonInboundPerItem,
   ]);
 
-  const displayedSoldTotalCost = soldEditMode ? soldPreview.totalCost : soldCostBreakdown.landedCost;
+  const shouldClearFbmReturnedSaleFields =
+    soldMode === "FBM" && Boolean(soldTargetRow?.last_return_date);
+  const shouldForceClearedFbmReturnedSaleDisplay = shouldClearFbmReturnedSaleFields && !soldEditMode;
 
-  const displayedSoldAmazonFees =
-    soldEditMode
+  const displayedSoldTotalCost = shouldForceClearedFbmReturnedSaleDisplay
+    ? soldCostBreakdown.landedCost
+    : soldEditMode ? soldPreview.totalCost : soldCostBreakdown.landedCost;
+
+  const displayedSoldAmazonFees = shouldForceClearedFbmReturnedSaleDisplay
+    ? soldCostBreakdown.amazonFees
+    : soldEditMode
       ? (soldAmazonFeesStr.trim() === ""
           ? Number(soldTargetRow?.amazon_fees ?? 0)
           : parseDecimalOrZero(soldAmazonFeesStr))
       : soldCostBreakdown.amazonFees;
 
-  const displayedSoldMiscCost =
-    soldEditMode
+  const displayedSoldMiscCost = shouldForceClearedFbmReturnedSaleDisplay
+    ? Number(soldTargetRow?.misc_fees ?? 0)
+    : soldEditMode
       ? (soldTargetRow?.status === "sold"
           ? parseDecimalOrZero(soldMiscFeesStr)
           : Number(soldTargetRow?.misc_fees ?? 0) + parseDecimalOrZero(soldMiscFeesStr))
       : Number(soldTargetRow?.misc_fees ?? 0);
 
-  const displayedSoldFbmShipping =
-    soldEditMode
+  const displayedSoldFbmShipping = shouldForceClearedFbmReturnedSaleDisplay
+    ? Number(soldTargetRow?.fbm_shipping_fee ?? 0)
+    : soldEditMode
       ? (soldMode === "FBM"
           ? parseDecimalOrZero(soldFbmShippingFeeStr)
           : Number(soldTargetRow?.fbm_shipping_fee ?? 0))
       : Number(soldTargetRow?.fbm_shipping_fee ?? 0);
 
-const displayedAmazonPayout = soldEditMode
+const displayedAmazonPayout = shouldForceClearedFbmReturnedSaleDisplay
+  ? Number(soldTargetRow?.sold_amount ?? 0) - Number(soldTargetRow?.amazon_fees ?? 0)
+  : soldEditMode
   ? soldPreview.amazonPayout
   : Number(soldTargetRow?.sold_amount ?? 0) - Number(soldTargetRow?.amazon_fees ?? 0);
 
-const displayedProfitLoss = soldEditMode
+const displayedProfitLoss = shouldForceClearedFbmReturnedSaleDisplay
+  ? displayedAmazonPayout - (displayedSoldTotalCost - Number(soldTargetRow?.amazon_fees ?? 0))
+  : soldEditMode
   ? soldPreview.profitLoss
   : displayedAmazonPayout - (displayedSoldTotalCost - Number(soldTargetRow?.amazon_fees ?? 0));
 
-const displayedROI = soldEditMode
+const displayedROI = shouldForceClearedFbmReturnedSaleDisplay
+  ? displayedSoldTotalCost > 0
+    ? (displayedProfitLoss / displayedSoldTotalCost) * 100
+    : 0
+  : soldEditMode
   ? soldPreview.roi
   : displayedSoldTotalCost > 0
     ? (displayedProfitLoss / displayedSoldTotalCost) * 100
@@ -4249,22 +4269,25 @@ const displayedROI = soldEditMode
     const effectiveMode = ((modeOverride ?? row?.sale_type ?? "FBA") as "FBA" | "FBM");
     const isExistingSold = row?.status === "sold";
     const isFreshSale = row?.status === "selling";
+    const isReturnedFbmReSale = effectiveMode === "FBM" && Boolean(row?.last_return_date) && !isExistingSold;
 
     setSoldMode(effectiveMode);
     setSoldAmountStr(
-      isExistingSold ? String(Number(row?.sold_amount ?? 0)) : isFreshSale ? "0" : String(Number(row?.sold_amount ?? 0))
+      isReturnedFbmReSale ? "0" : isExistingSold ? String(Number(row?.sold_amount ?? 0)) : isFreshSale ? "0" : String(Number(row?.sold_amount ?? 0))
     );
     setSoldAmazonFeesStr(
-      isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
+      isReturnedFbmReSale ? "0" : isExistingSold ? String(Number(row?.amazon_fees ?? 0)) : isFreshSale ? "0" : String(Number(row?.amazon_fees ?? 0))
     );
-    setSoldMiscFeesStr(isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
+    setSoldMiscFeesStr(isReturnedFbmReSale ? "0" : isExistingSold ? String(Number(row?.misc_fees ?? 0)) : "0");
     setSoldFbmShippingFeeStr(
-      isExistingSold || (!isFreshSale && effectiveMode === "FBM")
-        ? String(Number(row?.fbm_shipping_fee ?? 0))
-        : "0"
+      isReturnedFbmReSale
+        ? "0"
+        : isExistingSold || (!isFreshSale && effectiveMode === "FBM")
+          ? String(Number(row?.fbm_shipping_fee ?? 0))
+          : "0"
     );
-    setSoldFbmCarrierStr(isExistingSold ? String(row?.tracking_no ?? "") : "");
-    setSoldFbmTrackingNo(isExistingSold ? String(row?.fbm_tracking_no ?? "") : "");
+    setSoldFbmCarrierStr(isExistingSold && !isReturnedFbmReSale ? String(row?.tracking_no ?? "") : "");
+    setSoldFbmTrackingNo(isExistingSold && !isReturnedFbmReSale ? String(row?.fbm_tracking_no ?? "") : "");
     setSoldOrderDate(row?.order_date ?? todayISO());
   }
 
@@ -7709,7 +7732,7 @@ async function confirmSold() {
                           ref={soldAmountRef}
                           className={inputClass()}
                           inputMode="decimal"
-                          value={soldAmountStr}
+                          value={shouldForceClearedFbmReturnedSaleDisplay ? "" : soldAmountStr}
                           onChange={(e) => setSoldAmountStr(sanitizeDecimalInput(e.target.value))}
                           placeholder="0.00"
                           disabled={soldTargetRow?.status === "sold" && !soldEditMode}
@@ -7723,7 +7746,7 @@ async function confirmSold() {
                             <input
                               className={inputClass()}
                               inputMode="decimal"
-                              value={soldAmazonFeesStr}
+                              value={shouldForceClearedFbmReturnedSaleDisplay ? "" : soldAmazonFeesStr}
                               onChange={(e) => setSoldAmazonFeesStr(sanitizeDecimalInput(e.target.value))}
                               placeholder="0.00"
                               disabled={soldTargetRow?.status === "sold" && !soldEditMode}
@@ -7736,9 +7759,11 @@ async function confirmSold() {
                               className={inputClass()}
                               inputMode="decimal"
                               value={
-                                soldTargetRow?.status === "sold" && !soldEditMode
-                                  ? Number(soldTargetRow?.misc_fees ?? 0).toFixed(2)
-                                  : soldMiscFeesStr
+                                shouldForceClearedFbmReturnedSaleDisplay
+                                  ? ""
+                                  : soldTargetRow?.status === "sold" && !soldEditMode
+                                    ? Number(soldTargetRow?.misc_fees ?? 0).toFixed(2)
+                                    : soldMiscFeesStr
                               }
                               onChange={(e) => setSoldMiscFeesStr(sanitizeDecimalInput(e.target.value))}
                               placeholder="0.00"
@@ -7766,7 +7791,7 @@ async function confirmSold() {
                             <input
                               className={inputClass()}
                               inputMode="decimal"
-                              value={soldAmazonFeesStr}
+                              value={shouldForceClearedFbmReturnedSaleDisplay ? "" : soldAmazonFeesStr}
                               onChange={(e) => setSoldAmazonFeesStr(sanitizeDecimalInput(e.target.value))}
                               placeholder="0.00"
                               disabled={soldTargetRow?.status === "sold" && !soldEditMode}
@@ -7778,7 +7803,7 @@ async function confirmSold() {
                             <input
                               className={inputClass()}
                               inputMode="decimal"
-                              value={soldFbmShippingFeeStr}
+                              value={shouldForceClearedFbmReturnedSaleDisplay ? "" : soldFbmShippingFeeStr}
                               onChange={(e) => setSoldFbmShippingFeeStr(sanitizeDecimalInput(e.target.value))}
                               placeholder="0.00"
                               disabled={soldTargetRow?.status === "sold" && !soldEditMode}
@@ -7789,7 +7814,7 @@ async function confirmSold() {
                             <div className={fieldLabel()}>Carrier *</div>
                             <input
                               className={inputClass()}
-                              value={soldFbmCarrierStr}
+                              value={shouldForceClearedFbmReturnedSaleDisplay ? "" : soldFbmCarrierStr}
                               onChange={(e) => setSoldFbmCarrierStr(e.target.value)}
                               placeholder="Carrier"
                               disabled={soldTargetRow?.status === "sold" && !soldEditMode}
@@ -7800,7 +7825,7 @@ async function confirmSold() {
                             <div className={fieldLabel()}>Tracking Number *</div>
                             <input
                               className={inputClass()}
-                              value={soldFbmTrackingNo}
+                              value={shouldForceClearedFbmReturnedSaleDisplay ? "" : soldFbmTrackingNo}
                               onChange={(e) => setSoldFbmTrackingNo(e.target.value)}
                               placeholder="Tracking no"
                               disabled={soldTargetRow?.status === "sold" && !soldEditMode}
@@ -7813,9 +7838,11 @@ async function confirmSold() {
                               className={inputClass()}
                               inputMode="decimal"
                               value={
-                                soldTargetRow?.status === "sold" && !soldEditMode
-                                  ? Number(soldTargetRow?.misc_fees ?? 0).toFixed(2)
-                                  : soldMiscFeesStr
+                                shouldForceClearedFbmReturnedSaleDisplay
+                                  ? ""
+                                  : soldTargetRow?.status === "sold" && !soldEditMode
+                                    ? Number(soldTargetRow?.misc_fees ?? 0).toFixed(2)
+                                    : soldMiscFeesStr
                               }
                               onChange={(e) => setSoldMiscFeesStr(sanitizeDecimalInput(e.target.value))}
                               placeholder="0.00"
