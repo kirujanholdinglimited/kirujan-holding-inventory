@@ -704,7 +704,7 @@ function inSelectedRange(dateStr: string | null | undefined, range: RangeKey, fy
       start.setFullYear(start.getFullYear() - 1);
       break;
     case "FY": {
-      const activeFyLabel = isValidTaxYearLabel(fyLabel) ? fyLabel : getCurrentFyLabel(today);
+      const activeFyLabel: string = isValidTaxYearLabel(fyLabel) && fyLabel ? fyLabel : getCurrentFyLabel(today);
       const bounds = getFyBounds(activeFyLabel);
       start = bounds.start;
       realEnd = bounds.end;
