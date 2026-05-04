@@ -497,11 +497,10 @@ export default function ExpensesPage() {
         setShowMileageModal(false);
       }
     };
-    
-    const handleSort = () => {
-  console.log("sort clicked");
-};
 
+const handleSort = (field: string) => {
+  console.log("sorting by:", field);
+};
     window.addEventListener("keydown", handleEsc);
 
     return () => {
