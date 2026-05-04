@@ -1946,7 +1946,7 @@ export default function InventoryPage() {
             .in("shipment_box_id", visibleShipmentBoxNos);
 
           if (purErr) throw purErr;
-          shipmentItems = (purData ?? []) as PurchaseWithProduct[];
+          shipmentItems = (purData ?? []) as unknown as PurchaseWithProduct[];
         }
 
         setShipments(visibleShipments);
@@ -2029,7 +2029,7 @@ export default function InventoryPage() {
       const { data: purData, error: purErr } = await purchaseQuery;
       if (purErr) throw purErr;
 
-      let rows = (purData ?? []) as PurchaseWithProduct[];
+let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
       rows = rows.filter((r) => {
         if (!shouldApplyTaxYearFilter(status)) return true;
         const rowDate = getRowDateForRangeRaw(r);
