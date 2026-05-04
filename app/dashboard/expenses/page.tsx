@@ -455,6 +455,10 @@ export default function ExpensesPage() {
     setLoading(false);
   }
 
+  const handleSort = (field: string) => {
+  console.log("sorting by:", field);
+};
+
   useEffect(() => {
     loadExpenses();
   }, []);
@@ -498,9 +502,7 @@ export default function ExpensesPage() {
       }
     };
 
-const handleSort = (field: string) => {
-  console.log("sorting by:", field);
-};
+
     window.addEventListener("keydown", handleEsc);
 
     return () => {
