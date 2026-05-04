@@ -5086,13 +5086,13 @@ async function confirmSold() {
               <div class="section">
                 <div class="section-head">Product Details</div>
                 <div class="section-body">
-                  ${renderInfoTable(metaRows)}
+                  {renderInfoTable(metaRows as [string, string | number][])}
                 </div>
               </div>
               <div class="section">
                 <div class="section-head">Key Dates &amp; Movement</div>
                 <div class="section-body">
-                  ${renderInfoTable(movementRows)}
+                  {renderInfoTable(movementRows as [string, string | number][])}
                 </div>
               </div>
             </div>
@@ -5101,7 +5101,7 @@ async function confirmSold() {
               <div class="section">
                 <div class="section-head">Cost Breakdown</div>
                 <div class="section-body">
-                  ${renderInfoTable(moneyRows)}
+                  {renderInfoTable(moneyRows as [string, string | number][])}
                 </div>
               </div>
               <div class="section summary-section">
