@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+
 
 type StatusKey =
   | "all"
@@ -1122,7 +1123,7 @@ async function createFreshOpenShipmentRow() {
   throw new Error("Failed to create a new shipment box. Please try again.");
 }
 
-export default function InventoryPage() {
+function InventoryPageContent() {
   const searchParams = useSearchParams();
   const urlStatus = (searchParams.get("status") as StatusKey | null) ?? "all";
   const urlRange = (searchParams.get("range") as RangeKey | null) ?? "FY";
@@ -9106,3 +9107,11 @@ async function confirmSold() {
     </div>
   );
 } 
+
+export default function InventoryPage() {
+  return (
+    <Suspense fallback={null}>
+      <InventoryPageContent />
+    </Suspense>
+  );
+}

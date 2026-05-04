@@ -16,6 +16,11 @@ import {
 } from "recharts";
 import { supabase } from "@/lib/supabase";
 
+
+type FinanceRow = {
+  [key: string]: any;
+};
+
 type RangeKey =
   | "1D"
   | "7D"
@@ -2110,7 +2115,7 @@ export default function DashboardPage() {
         }
         if (addOpen) {
           setShopDropdownOpen(false);
-          setTaxYearDropdownOpen(false);
+          window.dispatchEvent(new Event("dashboard-tax-year-dropdown-close"));
           setAddOpen(false);
           return;
         }
@@ -2201,7 +2206,7 @@ export default function DashboardPage() {
         if (tag === "textarea") return;
         event.preventDefault();
         if (systemKpiEditOpen) saveEditedSystemKpi();
-        else addSystemKpi();
+        else saveEditedSystemKpi();
       }
     };
 
@@ -2412,7 +2417,7 @@ export default function DashboardPage() {
 
   const activeFinanceRows = useMemo(() => {
     return financeRows.filter((row) => {
-      const rowDate = parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at);
+      const rowDate = parseDate(row.entry_date ?? row.date ?? row.finance_date);
       return inDateRange(rowDate, rangeBounds.start, rangeBounds.end);
     });
   }, [financeRows, rangeBounds]);
@@ -2724,7 +2729,7 @@ export default function DashboardPage() {
       );
       const loanInterestRowsForMonth = financeRows.filter((row) => {
         if (!isLoanInterestFinanceRow(row)) return false;
-        return inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at), month.start, month.end);
+        return inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date), month.start, month.end);
       });
       const loanInterestExpensesForMonth = loanInterestRowsForMonth.reduce(
         (sum, row) => sum + safeNumber(row.amount),
@@ -4040,7 +4045,7 @@ const exportSystemKpiHistoryPdf = () => {
 
   const prevFyFinanceRows = useMemo(() => {
     return financeRows.filter((row) => {
-      const rowDate = parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at);
+      const rowDate = parseDate(row.entry_date ?? row.date ?? row.finance_date);
       return inDateRange(rowDate, prevFyBounds.start, prevFyBounds.end);
     });
   }, [financeRows, prevFyBounds]);
@@ -4214,7 +4219,7 @@ const exportSystemKpiHistoryPdf = () => {
     });
     allExpenseRows.forEach((row) => pushDate(row.expense_date));
     shipmentRows.forEach((row) => pushDate(row.shipment_date ?? row.sent_date ?? row.shipped_date ?? row.created_at));
-    financeRows.forEach((row) => pushDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at));
+    financeRows.forEach((row) => pushDate(row.entry_date ?? row.date ?? row.finance_date));
 
     const currentStartYear = Number(fyLabel.split("-")[0]);
     const minStartYear = allDates.length
@@ -4273,7 +4278,7 @@ const exportSystemKpiHistoryPdf = () => {
       );
 
       const financeRowsForYear = financeRows.filter((row) =>
-        inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date ?? row.created_at), bounds.start, bounds.end)
+        inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date), bounds.start, bounds.end)
       );
 
       const sales = moneyValue(soldRows.reduce((sum, row) => sum + rowTurnover(row), 0));
@@ -6073,7 +6078,7 @@ const exportSystemKpiHistoryPdf = () => {
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (systemKpiEditOpen) saveEditedSystemKpi();
-                  else addSystemKpi();
+                  else saveEditedSystemKpi();
                 }}
               >
                 <div>
@@ -6397,9 +6402,9 @@ const exportSystemKpiHistoryPdf = () => {
                             <YAxis yAxisId="left" tickFormatter={(value) => `£${Number(value).toLocaleString()}`} tick={{ fontSize: 12 }} />
                             <YAxis yAxisId="right" orientation="right" allowDecimals={false} tick={{ fontSize: 12 }} />
                             <Tooltip
-                              formatter={(value: number, name: string) =>
-                                name === "Units Sold" ? [Number(value).toLocaleString(), name] : [money(Number(value)), name]
-                              }
+                              formatter={(value: any, name: any) =>
+  name === "Units Sold" ? [Number(value).toLocaleString(), name] : [money(Number(value)), name]
+}
                             />
                             <Legend />
                             {monthlyChartSeries.map((series) =>
@@ -6551,7 +6556,7 @@ const exportSystemKpiHistoryPdf = () => {
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis dataKey="metric" tick={{ fontSize: 12 }} interval={0} angle={-18} textAnchor="end" height={70} />
                           <YAxis tickFormatter={(value) => `£${Number(value).toLocaleString()}`} tick={{ fontSize: 12 }} />
-                          <Tooltip formatter={(value: number) => [money(Number(value)), "Value"]} />
+                          <Tooltip formatter={(value: any) => [money(Number(value)), "Value"]} />
                           <Legend />
                           <Bar dataKey="value" name="Financial Year Total" fill="#171717" radius={[8, 8, 0, 0]} />
                         </BarChart>

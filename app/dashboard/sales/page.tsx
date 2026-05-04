@@ -504,7 +504,7 @@ export default function SalesPage() {
       return;
     }
 
-    const purchaseRows = (purchasesRes.data ?? []) as Row[];
+    const purchaseRows = (purchasesRes.data ?? []) as unknown as Row[];
     setRows(purchaseRows);
 
     const shipmentBoxNos = Array.from(
