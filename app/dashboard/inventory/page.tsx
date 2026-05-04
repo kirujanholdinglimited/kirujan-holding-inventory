@@ -658,7 +658,7 @@ function inSelectedTaxYear(dateStr: string | null | undefined, fyLabel?: string 
   const dt = new Date(String(dateStr).slice(0, 10) + "T00:00:00");
   if (Number.isNaN(dt.getTime())) return true;
 
-  const activeFyLabel = isValidTaxYearLabel(fyLabel) ? fyLabel : getCurrentFyLabel();
+const activeFyLabel: string = isValidTaxYearLabel(fyLabel) && fyLabel ? fyLabel : getCurrentFyLabel();
   const bounds = getFyBounds(activeFyLabel);
   return dt >= bounds.start && dt <= bounds.end;
 }
