@@ -2178,7 +2178,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
   const getPurchaseTotals = (row: PurchaseWithProduct | null | undefined) => {
     const baseTotal = Number(row?.total_cost ?? 0);
     const miscFees = Number(row?.misc_fees ?? 0);
-    const amazonFees = row?.sale_type === "FBM" && (row?.status === "awaiting_refund" || row?.status === "refunded" || (row?.status !== "sold" && Boolean(row?.last_return_date)))
+    const amazonFees = row?.status === "selling" || row?.status === "written_off" || (row?.sale_type === "FBM" && Boolean(row?.last_return_date))
       ? 0
       : Number(row?.amazon_fees ?? 0);
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
