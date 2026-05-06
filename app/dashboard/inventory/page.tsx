@@ -4029,7 +4029,7 @@ const writtenOffCostBreakdown = useMemo(() => {
   const miscCost = Number(writtenOffDetailRow?.misc_fees ?? 0);
   const returnShippingCost = Number(writtenOffDetailRow?.return_shipping_fee ?? 0);
   const fbmShippingCost = Number(writtenOffDetailRow?.fbm_shipping_fee ?? 0);
-  const amazonFees = Number(writtenOffDetailRow?.amazon_fees ?? 0);
+  const amazonFees = writtenOffDetailRow?.status === "written_off" ? 0 : Number(writtenOffDetailRow?.amazon_fees ?? 0);
 
   let amazonInboundPerItem = 0;
   if (writtenOffDetailShipment) {
@@ -4051,6 +4051,7 @@ const writtenOffCostBreakdown = useMemo(() => {
     shippingCost +
     amazonInboundPerItem +
     amazonFees +
+    miscCost +
     returnShippingCost +
     fbmShippingCost +
     writtenOffCost;
