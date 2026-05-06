@@ -4179,7 +4179,11 @@ const writtenOffCostBreakdown = useMemo(() => {
     const existingFbmShip = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
     const previewMiscFees = soldTargetRow?.status === "sold" ? enteredMiscFees : existingMisc + enteredMiscFees;
 
-    const previewFbmShipping = soldMode === "FBM" ? newFbmShippingFee : existingFbmShip;
+    const previewFbmShipping = soldMode === "FBM"
+      ? (Boolean(soldTargetRow?.last_return_date) && soldTargetRow?.status !== "sold"
+          ? existingFbmShip + newFbmShippingFee
+          : newFbmShippingFee)
+      : existingFbmShip;
 
 const baseCostExAmazonFees =
   productCost +
@@ -4240,7 +4244,9 @@ const baseCostExAmazonFees =
     ? Number(soldTargetRow?.fbm_shipping_fee ?? 0)
     : soldEditMode
       ? (soldMode === "FBM"
-          ? parseDecimalOrZero(soldFbmShippingFeeStr)
+          ? (Boolean(soldTargetRow?.last_return_date) && soldTargetRow?.status !== "sold"
+              ? Number(soldTargetRow?.fbm_shipping_fee ?? 0) + parseDecimalOrZero(soldFbmShippingFeeStr)
+              : parseDecimalOrZero(soldFbmShippingFeeStr))
           : Number(soldTargetRow?.fbm_shipping_fee ?? 0))
       : Number(soldTargetRow?.fbm_shipping_fee ?? 0);
 
@@ -4347,7 +4353,11 @@ async function confirmSold() {
   const existingReturnShip = Number(soldTargetRow?.return_shipping_fee ?? 0);
   const existingFbmShipping = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
   const nextMisc = isEditingExistingSoldItem ? enteredMiscFees : existingMisc + enteredMiscFees;
-  const nextFbmShipping = soldMode === "FBM" ? newFbmShippingFee : existingFbmShipping;
+  const nextFbmShipping = soldMode === "FBM"
+    ? (Boolean(soldTargetRow?.last_return_date) && !isEditingExistingSoldItem
+        ? existingFbmShipping + newFbmShippingFee
+        : newFbmShippingFee)
+    : existingFbmShipping;
 
   const productCost = Number(soldTargetRow?.unit_cost ?? 0);
   const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
