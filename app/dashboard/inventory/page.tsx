@@ -6152,7 +6152,7 @@ async function confirmSold() {
                               Number(r.tax_amount ?? 0) +
                               Number(r.shipping_cost ?? 0) +
                               getAmazonInboundPerItem(r) +
-                              Number(r.amazon_fees ?? 0) +
+                              0 +
                               Number(r.return_shipping_fee ?? 0) +
                               Number(r.fbm_shipping_fee ?? 0) +
                               Number(r.misc_fees ?? 0) +
@@ -6169,7 +6169,7 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.asin ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.brand ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
-                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(totals.soldTotal)}</td>
+                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? Number(r.unit_cost ?? 0) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + parseWriteOffFee(r.write_off_reason ?? null) : totals.soldTotal)}</td>
                           <td className="py-3 pr-4">{r.sale_type ?? "-"}</td>
                           <td className="py-3 pr-4">
                             {r.sold_amount == null ? "-" : money(Number(r.sold_amount))}
