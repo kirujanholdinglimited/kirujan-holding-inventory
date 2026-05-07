@@ -1792,7 +1792,7 @@ function InventoryPageContent() {
 
     const seen = new Set<string>();
     const reasons = (data ?? [])
-      .map((r: any) => titleCaseEveryWord(String(r.write_off_reason ?? "").trim()))
+      .map((r: any) => titleCaseEveryWord(parseWriteOffDetails(r.write_off_reason ?? null).reason))
       .filter((s: string) => {
         if (!s) return false;
         const key = s.toLowerCase();
@@ -2113,7 +2113,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
     });
 
     purchases.forEach((p) => {
-      const s = titleCaseEveryWord(String(p.write_off_reason ?? "").trim());
+      const s = titleCaseEveryWord(parseWriteOffDetails(p.write_off_reason ?? null).reason);
       if (s) set.add(s);
     });
 
@@ -2178,7 +2178,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
   const getPurchaseTotals = (row: PurchaseWithProduct | null | undefined) => {
     const baseTotal = Number(row?.total_cost ?? 0);
     const miscFees = Number(row?.misc_fees ?? 0);
-    const amazonFees = row?.status === "selling" || row?.status === "written_off" || (row?.sale_type === "FBM" && Boolean(row?.last_return_date))
+    const amazonFees = Boolean(row?.last_return_date)
       ? 0
       : Number(row?.amazon_fees ?? 0);
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
