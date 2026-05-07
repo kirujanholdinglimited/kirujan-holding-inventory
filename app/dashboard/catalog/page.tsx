@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
 
 type ProductRow = {
@@ -159,6 +159,19 @@ export default function CatalogPage() {
   const [editAmazonBarcode, setEditAmazonBarcode] = useState("");
   const [editErr, setEditErr] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  const createBarcodeLastInputAtRef = useRef(0);
+  const createAmazonBarcodeLastInputAtRef = useRef(0);
+  const editBarcodeLastInputAtRef = useRef(0);
+  const editAmazonBarcodeLastInputAtRef = useRef(0);
+
+  const blockScannerEnter = (event: React.KeyboardEvent<HTMLInputElement>, lastInputAt: number) => {
+    if (event.key !== "Enter") return;
+    if (Date.now() - lastInputAt < 180) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   const selectedRow = useMemo(
     () => (selectedId ? rows.find((r) => r.id === selectedId) ?? null : null),
@@ -497,7 +510,11 @@ export default function CatalogPage() {
                 <label className="text-xs text-neutral-600">Barcode</label>
                 <input
                   value={createBarcode}
-                  onChange={(e) => setCreateBarcode(e.target.value)}
+                  onChange={(e) => {
+                    createBarcodeLastInputAtRef.current = Date.now();
+                    setCreateBarcode(e.target.value);
+                  }}
+                  onKeyDown={(e) => blockScannerEnter(e, createBarcodeLastInputAtRef.current)}
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
                   placeholder="e.g. 5010991234567"
                 />
@@ -507,7 +524,11 @@ export default function CatalogPage() {
                 <label className="text-xs text-neutral-600">Amazon Barcode</label>
                 <input
                   value={createAmazonBarcode}
-                  onChange={(e) => setCreateAmazonBarcode(e.target.value)}
+                  onChange={(e) => {
+                    createAmazonBarcodeLastInputAtRef.current = Date.now();
+                    setCreateAmazonBarcode(e.target.value);
+                  }}
+                  onKeyDown={(e) => blockScannerEnter(e, createAmazonBarcodeLastInputAtRef.current)}
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
                   placeholder="e.g. X001ABC123"
                 />
@@ -597,7 +618,11 @@ export default function CatalogPage() {
                 <label className="text-xs text-neutral-600">Barcode</label>
                 <input
                   value={editBarcode}
-                  onChange={(e) => setEditBarcode(e.target.value)}
+                  onChange={(e) => {
+                    editBarcodeLastInputAtRef.current = Date.now();
+                    setEditBarcode(e.target.value);
+                  }}
+                  onKeyDown={(e) => blockScannerEnter(e, editBarcodeLastInputAtRef.current)}
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
                   placeholder="e.g. 5010991234567"
                 />
@@ -607,7 +632,11 @@ export default function CatalogPage() {
                 <label className="text-xs text-neutral-600">Amazon Barcode</label>
                 <input
                   value={editAmazonBarcode}
-                  onChange={(e) => setEditAmazonBarcode(e.target.value)}
+                  onChange={(e) => {
+                    editAmazonBarcodeLastInputAtRef.current = Date.now();
+                    setEditAmazonBarcode(e.target.value);
+                  }}
+                  onKeyDown={(e) => blockScannerEnter(e, editAmazonBarcodeLastInputAtRef.current)}
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
                   placeholder="e.g. X001ABC123"
                 />
