@@ -9,6 +9,8 @@ type ProductRow = {
   brand: string | null;
   product_name: string | null;
   product_code: number | null;
+  barcode: string | null;
+  amazon_code: string | null;
 };
 
 /* -------------------- Formatting helpers -------------------- */
@@ -104,7 +106,7 @@ function ModalShell({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-xl rounded-2xl border bg-white p-6 shadow-lg">
+      <div className="w-full max-w-2xl rounded-2xl border bg-white p-6 shadow-lg">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-base font-semibold text-neutral-900">{title}</div>
@@ -141,6 +143,8 @@ export default function CatalogPage() {
   const [createAsin, setCreateAsin] = useState("");
   const [createBrand, setCreateBrand] = useState("");
   const [createName, setCreateName] = useState("");
+  const [createBarcode, setCreateBarcode] = useState("");
+  const [createAmazonBarcode, setCreateAmazonBarcode] = useState("");
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [savingCreate, setSavingCreate] = useState(false);
 
@@ -151,6 +155,8 @@ export default function CatalogPage() {
   const [editAsin, setEditAsin] = useState("");
   const [editBrand, setEditBrand] = useState("");
   const [editName, setEditName] = useState("");
+  const [editBarcode, setEditBarcode] = useState("");
+  const [editAmazonBarcode, setEditAmazonBarcode] = useState("");
   const [editErr, setEditErr] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
@@ -170,7 +176,7 @@ export default function CatalogPage() {
 
     const { data, error } = await supabase
       .from("products")
-      .select("id, asin, brand, product_name, product_code")
+      .select("id, asin, brand, product_name, product_code, barcode, amazon_code")
       .order("product_code", { ascending: true });
 
     if (error) {
@@ -196,11 +202,15 @@ export default function CatalogPage() {
       const asin = (r.asin ?? "").toLowerCase();
       const brand = (r.brand ?? "").toLowerCase();
       const name = (r.product_name ?? "").toLowerCase();
+      const barcode = (r.barcode ?? "").toLowerCase();
+      const amazonCode = (r.amazon_code ?? "").toLowerCase();
       return (
         code.includes(needle) ||
         asin.includes(needle) ||
         brand.includes(needle) ||
-        name.includes(needle)
+        name.includes(needle) ||
+        barcode.includes(needle) ||
+        amazonCode.includes(needle)
       );
     });
   }, [rows, q]);
@@ -210,6 +220,8 @@ export default function CatalogPage() {
     setCreateAsin("");
     setCreateBrand("");
     setCreateName("");
+    setCreateBarcode("");
+    setCreateAmazonBarcode("");
     setOpenCreate(true);
   }
 
@@ -220,6 +232,8 @@ export default function CatalogPage() {
     setEditAsin(row.asin ?? "");
     setEditBrand(row.brand ?? "");
     setEditName(row.product_name ?? "");
+    setEditBarcode(row.barcode ?? "");
+    setEditAmazonBarcode(row.amazon_code ?? "");
     setOpenEdit(true);
   }
 
@@ -229,6 +243,8 @@ export default function CatalogPage() {
     const asin = normalizeAsin(createAsin);
     const brand = titleCaseLive(createBrand).trim();
     const name = titleCaseLive(createName).trim();
+    const barcode = createBarcode.trim();
+    const amazonBarcode = createAmazonBarcode.trim();
 
     if (!asin) return setCreateErr("ASIN is required.");
     if (!brand) return setCreateErr("Brand is required.");
@@ -242,6 +258,8 @@ export default function CatalogPage() {
         asin,
         brand,
         product_name: name,
+        barcode: barcode || null,
+        amazon_code: amazonBarcode || null,
       },
     ]);
 
@@ -264,6 +282,8 @@ export default function CatalogPage() {
     const asin = normalizeAsin(editAsin);
     const brand = titleCaseLive(editBrand).trim();
     const name = titleCaseLive(editName).trim();
+    const barcode = editBarcode.trim();
+    const amazonBarcode = editAmazonBarcode.trim();
 
     if (!asin) return setEditErr("ASIN is required.");
     if (!brand) return setEditErr("Brand is required.");
@@ -277,6 +297,8 @@ export default function CatalogPage() {
         asin,
         brand,
         product_name: name,
+        barcode: barcode || null,
+        amazon_code: amazonBarcode || null,
       })
       .eq("id", editId);
 
@@ -320,7 +342,7 @@ export default function CatalogPage() {
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search asin / brand / name / code…"
+                placeholder="Search asin / brand / name / code / barcode…"
                 className="w-full rounded-xl border bg-white px-3 py-2 text-sm"
               />
             </div>
@@ -370,6 +392,8 @@ export default function CatalogPage() {
                 <tr className="border-b">
                   <th className="py-3 pr-4">Code</th>
                   <th className="py-3 pr-4">ASIN</th>
+                  <th className="py-3 pr-4">EAN Barcode</th>
+                  <th className="py-3 pr-4">Amazon Barcode</th>
                   <th className="py-3 pr-4">Brand</th>
                   <th className="py-3 pr-4">Product Name</th>
                 </tr>
@@ -391,6 +415,8 @@ export default function CatalogPage() {
                         {r.product_code ?? "-"}
                       </td>
                       <td className="py-3 pr-4">{r.asin ?? "-"}</td>
+                      <td className="py-3 pr-4">{r.barcode ?? "-"}</td>
+                      <td className="py-3 pr-4">{r.amazon_code ?? "-"}</td>
                       <td className="py-3 pr-4">{r.brand ?? "-"}</td>
                       <td className="py-3 pr-4">{r.product_name ?? "-"}</td>
                     </tr>
@@ -425,7 +451,7 @@ export default function CatalogPage() {
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <label className="text-xs text-neutral-600">Product Code</label>
               <input
@@ -456,7 +482,7 @@ export default function CatalogPage() {
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-3">
               <label className="text-xs text-neutral-600">Product Name</label>
               <input
                 value={createName}
@@ -464,6 +490,28 @@ export default function CatalogPage() {
                 className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
                 placeholder="e.g. X Wing Fighter"
               />
+            </div>
+
+            <div className="sm:col-span-3 grid gap-3 sm:grid-cols-2">
+              <div className="w-full">
+                <label className="text-xs text-neutral-600">Barcode</label>
+                <input
+                  value={createBarcode}
+                  onChange={(e) => setCreateBarcode(e.target.value)}
+                  className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                  placeholder="e.g. 5010991234567"
+                />
+              </div>
+
+              <div className="w-full">
+                <label className="text-xs text-neutral-600">Amazon Barcode</label>
+                <input
+                  value={createAmazonBarcode}
+                  onChange={(e) => setCreateAmazonBarcode(e.target.value)}
+                  className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                  placeholder="e.g. X001ABC123"
+                />
+              </div>
             </div>
           </div>
 
@@ -506,7 +554,7 @@ export default function CatalogPage() {
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <label className="text-xs text-neutral-600">Product Code</label>
               <input
@@ -535,13 +583,35 @@ export default function CatalogPage() {
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-3">
               <label className="text-xs text-neutral-600">Product Name</label>
               <input
                 value={editName}
                 onChange={(e) => setEditName(titleCaseLive(e.target.value))}
                 className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
               />
+            </div>
+
+            <div className="sm:col-span-3 grid gap-3 sm:grid-cols-2">
+              <div className="w-full">
+                <label className="text-xs text-neutral-600">Barcode</label>
+                <input
+                  value={editBarcode}
+                  onChange={(e) => setEditBarcode(e.target.value)}
+                  className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                  placeholder="e.g. 5010991234567"
+                />
+              </div>
+
+              <div className="w-full">
+                <label className="text-xs text-neutral-600">Amazon Barcode</label>
+                <input
+                  value={editAmazonBarcode}
+                  onChange={(e) => setEditAmazonBarcode(e.target.value)}
+                  className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                  placeholder="e.g. X001ABC123"
+                />
+              </div>
             </div>
           </div>
 
