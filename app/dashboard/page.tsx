@@ -1170,7 +1170,7 @@ function rowReturnFeeDate(row: Record<string, any>): Date | null {
 }
 function moneyValue(n: number): number {
   if (!Number.isFinite(n)) return 0;
-  return Math.round((n + Number.EPSILON) * 100) / 100;
+  return Math.sign(n) * Math.ceil((Math.abs(n) - Number.EPSILON) * 100) / 100;
 }
 
 function rowMiles(row: Record<string, any>): number {
