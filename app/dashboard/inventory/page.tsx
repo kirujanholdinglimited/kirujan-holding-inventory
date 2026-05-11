@@ -1830,7 +1830,7 @@ function InventoryPageContent() {
   function getRowDateForRangeRaw(row: PurchaseWithProduct) {
     if (row.status === "sold") return row.order_date ?? row.created_at;
     if (row.status === "awaiting_refund" || row.status === "refunded") return row.returned_date ?? row.created_at;
-    if (row.status === "selling") return row.created_at;
+    if (row.status === "selling") return row.purchase_date ?? row.created_at;
     if (row.status === "sent_to_amazon") return row.created_at;
     return row.purchase_date ?? row.created_at;
   }
