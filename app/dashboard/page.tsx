@@ -1127,9 +1127,9 @@ function rowCustomerReturnFee(row: Record<string, any>): number {
 
 function rowCustomerReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.last_return_date ??
-      row.return_date ??
+    row.return_date ??
       row.returned_date ??
+      row.last_return_date ??
       row.refunded_date ??
       row.refund_date ??
       row.return_created_at ??
@@ -1160,7 +1160,7 @@ function rowReturnFee(row: Record<string, any>): number {
 
 function rowReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.last_return_date ?? row.returned_date ??
+    row.returned_date ??
       row.return_date ??
       row.refunded_date ??
       row.refund_date ??
@@ -1170,7 +1170,7 @@ function rowReturnFeeDate(row: Record<string, any>): Date | null {
 }
 function moneyValue(n: number): number {
   if (!Number.isFinite(n)) return 0;
-  return Math.sign(n) * Math.ceil((Math.abs(n) - Number.EPSILON) * 100) / 100;
+  return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
 function rowMiles(row: Record<string, any>): number {
@@ -1220,15 +1220,15 @@ function rowItemCostTotal(row: Record<string, any>): number {
     "buy_cost",
     "price",
   ]);
-  return moneyValue(unitCost * qty);
+  return Math.trunc((unitCost * qty) * 100) / 100;
 }
 
 function rowVatTotal(row: Record<string, any>): number {
-  return moneyValue(firstNumber(row, ["tax_amount"]));
+  return Math.trunc(firstNumber(row, ["tax_amount"]) * 100) / 100;
 }
 
 function rowInboundShippingTotal(row: Record<string, any>): number {
-  return moneyValue(firstNumber(row, ["shipping_cost"]));
+  return Math.trunc(firstNumber(row, ["shipping_cost"]) * 100) / 100;
 }
 
 function rowStoredTotalCost(row: Record<string, any>): number {
