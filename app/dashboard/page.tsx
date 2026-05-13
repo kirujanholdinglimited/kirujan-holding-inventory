@@ -1115,6 +1115,30 @@ function rowWriteOffFee(row: Record<string, any>): number {
   const n = Number(lastMatch[1]);
   return Number.isFinite(n) ? n : 0;
 }
+function rowCustomerReturnFee(row: Record<string, any>): number {
+  return moneyValue(
+    toNumber(row.return_shipping_fee) +
+      toNumber(row.customer_return_fee) +
+      toNumber(row.return_fee_from_customer) +
+      toNumber(row.customer_return_charge) +
+      toNumber(row.return_postage_charge)
+  );
+}
+
+function rowCustomerReturnFeeDate(row: Record<string, any>): Date | null {
+  return parseDate(
+    row.return_date ??
+      row.returned_date ??
+      row.last_return_date ??
+      row.refunded_date ??
+      row.refund_date ??
+      row.return_created_at ??
+      row.updated_at ??
+      row.order_date ??
+      row.created_at
+  );
+}
+
 
 function rowFbmShippingFee(row: Record<string, any>): number {
   return row.fbm_shipping_fee != null ? toNumber(row.fbm_shipping_fee) : toNumber(row.ship_fee);
@@ -1196,15 +1220,15 @@ function rowItemCostTotal(row: Record<string, any>): number {
     "buy_cost",
     "price",
   ]);
-  return moneyValue(unitCost * qty);
+  return Math.trunc((unitCost * qty) * 100) / 100;
 }
 
 function rowVatTotal(row: Record<string, any>): number {
-  return moneyValue(firstNumber(row, ["tax_amount"]));
+  return Math.trunc(firstNumber(row, ["tax_amount"]) * 100) / 100;
 }
 
 function rowInboundShippingTotal(row: Record<string, any>): number {
-  return moneyValue(firstNumber(row, ["shipping_cost"]));
+  return Math.trunc(firstNumber(row, ["shipping_cost"]) * 100) / 100;
 }
 
 function rowStoredTotalCost(row: Record<string, any>): number {
@@ -1636,6 +1660,10 @@ function rowSoldOrRemovedDate(row: Record<string, any>) {
       row.removed_date ??
       row.updated_at
   );
+}
+
+function rowWriteOffDate(row: Record<string, any>) {
+  return parseDate(row.write_off_date ?? row.written_off_date ?? row.removed_date ?? row.updated_at);
 }
 
 function stockValueAtDate(rows: PurchaseDashboardRow[], cutoff: Date) {
@@ -2297,9 +2325,16 @@ export default function DashboardPage() {
       written_off: { units: 0, value: 0 },
     };
 
+    const selectedStockFyLabel = isValidTaxYearLabel(selectedFyLabel) ? selectedFyLabel : currentFyLabel;
+    const selectedStockFyBounds = getFyBounds(selectedStockFyLabel);
+
     for (const r of purchaseRows) {
       const st = normalizeStatus(r?.status);
       if (!(st in agg)) continue;
+
+      if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+      if (st === "written_off" && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+
       const qty = rowQty(r);
       if (qty <= 0) continue;
       const totalValue = rowValueAtCost(r);
@@ -2316,7 +2351,7 @@ export default function DashboardPage() {
       damaged: { ...prev.damaged, units: agg.written_off.units, value: agg.written_off.value },
       sold: { ...prev.sold, units: agg.sold.units, value: agg.sold.value },
     }));
-  }, [purchaseRows]);
+  }, [purchaseRows, selectedFyLabel, currentFyLabel]);
 
   const fyLabel = isValidTaxYearLabel(selectedFyLabel) ? selectedFyLabel : currentFyLabel;
   const fyBounds = useMemo(() => getFyBounds(fyLabel), [fyLabel]);
@@ -2676,6 +2711,11 @@ export default function DashboardPage() {
       const soldRows = purchaseRows.filter((row) => {
         if (normalizeStatus(row.status) !== "sold") return false;
         return inDateRange(parseDate(row.order_date ?? row.created_at), month.start, month.end);
+      });
+
+      const returnFeeRowsForMonth = purchaseRows.filter((row) => {
+        if (rowCustomerReturnFee(row) <= 0) return false;
+        return inDateRange(rowCustomerReturnFeeDate(row), month.start, month.end);
       });
 
       const writeOffRows = purchaseRows.filter((row) => {
@@ -4149,16 +4189,12 @@ const exportSystemKpiHistoryPdf = () => {
         .reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
     const shippingRunningCost = prevFyShipmentRows.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0);
     const shippingTaxRunningCost = prevFyShipmentRows.reduce((sum, row) => sum + shipmentTaxTotal(row), 0);
-    const customerReturnFee = prevFySoldRows.reduce(
-      (sum, row) =>
-        sum +
-        toNumber(row.return_shipping_fee) +
-        toNumber(row.customer_return_fee) +
-        toNumber(row.return_fee_from_customer) +
-        toNumber(row.customer_return_charge) +
-        toNumber(row.return_postage_charge),
-      0
+    const prevFyReturnFeeRows = purchaseRows.filter(
+      (row) =>
+        rowCustomerReturnFee(row) > 0 &&
+        inDateRange(rowCustomerReturnFeeDate(row), prevFyBounds.start, prevFyBounds.end)
     );
+    const customerReturnFee = prevFyReturnFeeRows.reduce((sum, row) => sum + rowCustomerReturnFee(row), 0);
     const fbmShippingFee = prevFySoldRows.reduce(
       (sum, row) => sum + (row.fbm_shipping_fee != null ? toNumber(row.fbm_shipping_fee) : toNumber(row.ship_fee)),
       0
@@ -4186,7 +4222,7 @@ const exportSystemKpiHistoryPdf = () => {
       fixedAssets,
       runningExpenses,
     };
-  }, [prevFySoldRows, prevFyWrittenOffRows, prevFyShipmentRows, prevFyExpenseRows]);
+  }, [prevFySoldRows, prevFyWrittenOffRows, prevFyShipmentRows, prevFyExpenseRows, prevFyPurchaseRows, purchaseRows, prevFyBounds]);
 
   const prevFyFundingInSummary = useMemo(
     () =>
