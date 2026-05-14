@@ -1127,9 +1127,9 @@ function rowCustomerReturnFee(row: Record<string, any>): number {
 
 function rowCustomerReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.return_date ??
+    row.last_return_date ??
+      row.return_date ??
       row.returned_date ??
-      row.last_return_date ??
       row.refunded_date ??
       row.refund_date ??
       row.return_created_at ??
@@ -1160,7 +1160,8 @@ function rowReturnFee(row: Record<string, any>): number {
 
 function rowReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.returned_date ??
+    row.last_return_date ??
+      row.returned_date ??
       row.return_date ??
       row.refunded_date ??
       row.refund_date ??
@@ -3597,7 +3598,7 @@ export default function DashboardPage() {
     stock.home.units +
     stock.outbound.units +
     stock.selling.units +
-    stock.damaged.units;
+    0;
 
   const totalStockValue =
     stock.inbound.value +

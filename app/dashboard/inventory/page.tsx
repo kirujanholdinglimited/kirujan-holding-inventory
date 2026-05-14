@@ -96,6 +96,19 @@ type PurchaseRow = {
 
 type PurchaseWithProduct = PurchaseRow & { product?: ProductRow | null };
 
+type DateEditForm = {
+  purchase_date: string;
+  delivery_date: string;
+  expiry_date: string;
+  order_date: string;
+  write_off_date: string;
+  returned_date: string;
+  refunded_date: string;
+  last_return_date: string;
+  shipment_date: string;
+  checkin_date: string;
+};
+
 type ShipmentRow = {
   id: string;
   created_at: string;
@@ -1236,6 +1249,24 @@ function InventoryPageContent() {
 
   const [returnedItemDetailOpen, setReturnedItemDetailOpen] = useState(false);
   const [returnedItemDetailId, setReturnedItemDetailId] = useState<string | null>(null);
+
+  const [dateEditOpen, setDateEditOpen] = useState(false);
+  const [dateEditPurchaseId, setDateEditPurchaseId] = useState<string | null>(null);
+  const [dateEditShipmentId, setDateEditShipmentId] = useState<string | null>(null);
+  const [dateEditForm, setDateEditForm] = useState<DateEditForm>({
+    purchase_date: "",
+    delivery_date: "",
+    expiry_date: "",
+    order_date: "",
+    write_off_date: "",
+    returned_date: "",
+    refunded_date: "",
+    last_return_date: "",
+    shipment_date: "",
+    checkin_date: "",
+  });
+  const [dateEditBusy, setDateEditBusy] = useState(false);
+  const [dateEditError, setDateEditError] = useState<string | null>(null);
 
   const [productQuery, setProductQuery] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
@@ -4612,6 +4643,130 @@ async function confirmSold() {
     return purchases.find((p) => p.id === selectedPurchaseId) ?? null;
   }, [purchases, selectedPurchaseId]);
 
+  const dateEditTargetPurchase = useMemo(() => {
+    if (!dateEditPurchaseId) return null;
+    return purchases.find((p) => p.id === dateEditPurchaseId) ?? null;
+  }, [dateEditPurchaseId, purchases]);
+
+  function openDateEditFor(row: PurchaseWithProduct | null | undefined, shipment?: ShipmentRow | null) {
+    if (!row) return;
+    setDateEditError(null);
+    setDateEditPurchaseId(row.id);
+    setDateEditShipmentId(shipment?.id ?? null);
+    setDateEditForm({
+      purchase_date: row.purchase_date ?? "",
+      delivery_date: row.delivery_date ?? "",
+      expiry_date: row.expiry_date ?? "",
+      order_date: row.order_date ?? "",
+      write_off_date: row.write_off_date ?? "",
+      returned_date: row.returned_date ?? "",
+      refunded_date: row.refunded_date ?? "",
+      last_return_date: row.last_return_date ?? "",
+      shipment_date: shipment?.shipment_date ?? "",
+      checkin_date: shipment?.checkin_date ?? "",
+    });
+    setDateEditOpen(true);
+  }
+
+  function setDateEditField(field: keyof DateEditForm, value: string) {
+    setDateEditForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function dateEditTaxYearSource(
+    row: PurchaseWithProduct,
+    updates: Partial<Record<keyof DateEditForm, string | null>>
+  ) {
+    const currentOrUpdated = (field: keyof DateEditForm) =>
+      field in updates ? updates[field] : String(row[field as keyof PurchaseWithProduct] ?? "") || null;
+
+    const changedFields = Object.keys(updates) as (keyof DateEditForm)[];
+
+    if (changedFields.includes("last_return_date")) return currentOrUpdated("last_return_date");
+    if (row.status === "written_off" && changedFields.includes("write_off_date")) return currentOrUpdated("write_off_date");
+    if (row.status === "refunded" && changedFields.includes("refunded_date")) return currentOrUpdated("refunded_date");
+    if ((row.status === "awaiting_refund" || row.status === "refunded") && changedFields.includes("returned_date")) return currentOrUpdated("returned_date");
+    if (row.status === "sold" && changedFields.includes("order_date")) return currentOrUpdated("order_date");
+    if (changedFields.includes("purchase_date")) return currentOrUpdated("purchase_date");
+
+    for (const field of ["write_off_date", "refunded_date", "returned_date", "last_return_date", "order_date", "delivery_date", "purchase_date", "expiry_date"] as (keyof DateEditForm)[]) {
+      if (changedFields.includes(field)) {
+        const value = currentOrUpdated(field);
+        if (value) return value;
+      }
+    }
+
+    return null;
+  }
+
+  async function saveDateEdits() {
+    if (!dateEditTargetPurchase) return;
+
+    setDateEditBusy(true);
+    setDateEditError(null);
+
+    try {
+      const purchaseDateFields = [
+        "purchase_date",
+        "delivery_date",
+        "expiry_date",
+        "order_date",
+        "write_off_date",
+        "returned_date",
+        "refunded_date",
+        "last_return_date",
+      ] as (keyof DateEditForm)[];
+
+      const purchaseUpdates: Record<string, string | null> = {};
+
+      for (const field of purchaseDateFields) {
+        const nextValue = toNullDate(dateEditForm[field]);
+        const currentValue = String(dateEditTargetPurchase[field as keyof PurchaseWithProduct] ?? "") || null;
+        if (nextValue !== currentValue) {
+          purchaseUpdates[field] = nextValue;
+        }
+      }
+
+      const taxYearSource = dateEditTaxYearSource(dateEditTargetPurchase, purchaseUpdates as Partial<Record<keyof DateEditForm, string | null>>);
+      if (taxYearSource) {
+        purchaseUpdates.tax_year = computeUkTaxYear(taxYearSource);
+      }
+
+      const shipment = dateEditShipmentId ? shipments.find((s) => s.id === dateEditShipmentId) ?? null : null;
+      const shipmentUpdates: Record<string, string | null> = {};
+
+      if (shipment) {
+        const nextShipmentDate = toNullDate(dateEditForm.shipment_date);
+        const nextCheckinDate = toNullDate(dateEditForm.checkin_date);
+        if (nextShipmentDate !== (shipment.shipment_date ?? null)) shipmentUpdates.shipment_date = nextShipmentDate;
+        if (nextCheckinDate !== (shipment.checkin_date ?? null)) shipmentUpdates.checkin_date = nextCheckinDate;
+      }
+
+      if (!Object.keys(purchaseUpdates).length && !Object.keys(shipmentUpdates).length) {
+        setDateEditOpen(false);
+        return;
+      }
+
+      if (Object.keys(purchaseUpdates).length) {
+        const { error } = await supabase.from("purchases").update(purchaseUpdates).eq("id", dateEditTargetPurchase.id);
+        if (error) throw error;
+      }
+
+      if (shipment && Object.keys(shipmentUpdates).length) {
+        const { error } = await supabase.from("shipments").update(shipmentUpdates).eq("id", shipment.id);
+        if (error) throw error;
+      }
+
+      setDateEditOpen(false);
+      setDateEditPurchaseId(null);
+      setDateEditShipmentId(null);
+      await loadAll();
+    } catch (e: any) {
+      setDateEditError(e?.message ?? "Failed to save date changes.");
+    } finally {
+      setDateEditBusy(false);
+    }
+  }
+
   function openEditFor(p: PurchaseWithProduct) {
     setEditError(null);
     setSelectedPurchaseId(p.id);
@@ -6638,7 +6793,10 @@ async function confirmSold() {
           </div>
 
           <div className="rounded-2xl border p-4">
-            <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
+            <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
+              <span>Key Dates &amp; Movement</span>
+              <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(writtenOffDetailRow, writtenOffDetailShipment)} title="Edit dates">✏️</button>
+            </div>
             <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
               <div className="font-semibold">Purchase Date:</div><div>{fmtDate(writtenOffDetailRow?.purchase_date ?? null)}</div>
               <div className="font-semibold">Delivery Date:</div><div>{fmtDate(writtenOffDetailRow?.delivery_date ?? null)}</div>
@@ -7639,7 +7797,10 @@ async function confirmSold() {
                 </div>
 
                 <div className="rounded-2xl border p-4">
-                  <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
+                  <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
+                    <span>Key Dates &amp; Movement</span>
+                    <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(soldTargetRow, soldTargetShipment)} title="Edit dates">✏️</button>
+                  </div>
                   <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
                     <div className="font-semibold">Purchase Date:</div><div>{fmtDate(soldTargetRow?.purchase_date ?? null)}</div>
                     <div className="font-semibold">Delivery Date:</div><div>{fmtDate(soldTargetRow?.delivery_date ?? null)}</div>
@@ -8409,7 +8570,10 @@ async function confirmSold() {
                 </div>
 
                 <div className="rounded-2xl border p-4">
-                  <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
+                  <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
+                    <span>Key Dates &amp; Movement</span>
+                    <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(returnedItemDetailRow)} title="Edit dates">✏️</button>
+                  </div>
                   <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
                     <div className="font-semibold">Purchase Date:</div><div>{fmtDate(returnedItemDetailRow.purchase_date ?? null)}</div>
                     <div className="font-semibold">Delivery Date:</div><div>{fmtDate(returnedItemDetailRow.delivery_date ?? null)}</div>
@@ -8489,6 +8653,94 @@ async function confirmSold() {
         </div>
       ) : null}
 
+      {dateEditOpen && dateEditTargetPurchase ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30" onMouseDown={() => setDateEditOpen(false)}>
+          <div className={modalCard()} onMouseDown={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between border-b p-5">
+              <div>
+                <div className="text-lg font-semibold text-neutral-900">Edit Key Dates</div>
+                <div className="mt-1 text-xs text-neutral-600">
+                  Only changed dates will be updated. Unchanged dates stay exactly as they are.
+                </div>
+              </div>
+              <button type="button" className={buttonClass()} onClick={() => setDateEditOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            <form
+              className="space-y-4 p-5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                saveDateEdits();
+              }}
+            >
+              {dateEditError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {dateEditError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Purchase Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.purchase_date} onChange={(e) => setDateEditField("purchase_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Delivery Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.delivery_date} onChange={(e) => setDateEditField("delivery_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Expiry Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.expiry_date} onChange={(e) => setDateEditField("expiry_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Order Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.order_date} onChange={(e) => setDateEditField("order_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Write Off Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.write_off_date} onChange={(e) => setDateEditField("write_off_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Returned Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.returned_date} onChange={(e) => setDateEditField("returned_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Refunded Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.refunded_date} onChange={(e) => setDateEditField("refunded_date", e.target.value)} />
+                </label>
+                <label className="space-y-1">
+                  <div className={fieldLabel()}>Last Return Date</div>
+                  <input type="date" className={inputClass()} value={dateEditForm.last_return_date} onChange={(e) => setDateEditField("last_return_date", e.target.value)} />
+                </label>
+                {dateEditShipmentId ? (
+                  <>
+                    <label className="space-y-1">
+                      <div className={fieldLabel()}>Shipment Date</div>
+                      <input type="date" className={inputClass()} value={dateEditForm.shipment_date} onChange={(e) => setDateEditField("shipment_date", e.target.value)} />
+                    </label>
+                    <label className="space-y-1">
+                      <div className={fieldLabel()}>Check-in Date</div>
+                      <input type="date" className={inputClass()} value={dateEditForm.checkin_date} onChange={(e) => setDateEditField("checkin_date", e.target.value)} />
+                    </label>
+                  </>
+                ) : null}
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button type="button" className={buttonClass()} onClick={() => setDateEditOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className={buttonClass(true)} disabled={dateEditBusy}>
+                  {dateEditBusy ? "Saving..." : "Save Dates"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
       {editOpen && selectedPurchase ? (
         <div className={modalBackdrop()} onMouseDown={() => setEditOpen(false)}>
           <div className={modalCard()} onMouseDown={(e) => e.stopPropagation()}>
@@ -8542,7 +8794,10 @@ async function confirmSold() {
                     </div>
 
                     <div className="rounded-2xl border p-4">
-                      <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
+                      <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
+                        <span>Key Dates &amp; Movement</span>
+                        <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(selectedPurchase, getShipmentForPurchase(selectedPurchase))} title="Edit dates">✏️</button>
+                      </div>
                       <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
                         <div className="font-semibold">Purchase Date:</div><div>{fmtDate(selectedPurchase.purchase_date ?? null)}</div>
                         <div className="font-semibold">Delivery Date:</div><div>{fmtDate(selectedPurchase.delivery_date ?? null)}</div>
