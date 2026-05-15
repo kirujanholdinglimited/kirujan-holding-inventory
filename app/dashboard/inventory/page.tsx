@@ -96,19 +96,6 @@ type PurchaseRow = {
 
 type PurchaseWithProduct = PurchaseRow & { product?: ProductRow | null };
 
-type DateEditForm = {
-  purchase_date: string;
-  delivery_date: string;
-  expiry_date: string;
-  order_date: string;
-  write_off_date: string;
-  returned_date: string;
-  refunded_date: string;
-  last_return_date: string;
-  shipment_date: string;
-  checkin_date: string;
-};
-
 type ShipmentRow = {
   id: string;
   created_at: string;
@@ -137,6 +124,21 @@ function money(n: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function CostBreakdownLabel({ label, help }: { label: string; help: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{label}</span>
+      <span
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-neutral-400 text-[10px] font-semibold text-neutral-600"
+        title={help}
+        aria-label={help}
+      >
+        ?
+      </span>
+    </span>
+  );
 }
 
 function todayISO() {
@@ -1250,24 +1252,6 @@ function InventoryPageContent() {
   const [returnedItemDetailOpen, setReturnedItemDetailOpen] = useState(false);
   const [returnedItemDetailId, setReturnedItemDetailId] = useState<string | null>(null);
 
-  const [dateEditOpen, setDateEditOpen] = useState(false);
-  const [dateEditPurchaseId, setDateEditPurchaseId] = useState<string | null>(null);
-  const [dateEditShipmentId, setDateEditShipmentId] = useState<string | null>(null);
-  const [dateEditForm, setDateEditForm] = useState<DateEditForm>({
-    purchase_date: "",
-    delivery_date: "",
-    expiry_date: "",
-    order_date: "",
-    write_off_date: "",
-    returned_date: "",
-    refunded_date: "",
-    last_return_date: "",
-    shipment_date: "",
-    checkin_date: "",
-  });
-  const [dateEditBusy, setDateEditBusy] = useState(false);
-  const [dateEditError, setDateEditError] = useState<string | null>(null);
-
   const [productQuery, setProductQuery] = useState("");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
@@ -2243,6 +2227,42 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
         fbmShippingFee +
         amazonFees +
         writeOffFee,
+    };
+  };
+
+
+  const getDiscountedCostParts = (row: PurchaseWithProduct | null | undefined) => {
+    const originalUnitCost = Number(row?.unit_cost ?? 0);
+    const taxCost = Number(row?.tax_amount ?? 0);
+    const shippingCost = Number(row?.shipping_cost ?? 0);
+    const savedBaseTotal = Number(row?.total_cost ?? 0);
+    const discountType = row?.discount_type ?? null;
+    const discountValue = Number(row?.discount_value ?? 0);
+
+    let discountedUnitCost = originalUnitCost;
+    let discountAmount = 0;
+
+    if (discountType === "percent" && discountValue > 0) {
+      discountAmount = (originalUnitCost * discountValue) / 100;
+      discountedUnitCost = Math.max(0, originalUnitCost - discountAmount);
+    } else if (discountType === "fixed" && discountValue > 0) {
+      discountAmount = discountValue;
+      discountedUnitCost = Math.max(0, originalUnitCost - discountAmount);
+    } else if (savedBaseTotal > 0) {
+      const inferredUnitCost = Math.max(0, savedBaseTotal - taxCost - shippingCost);
+      if (inferredUnitCost < originalUnitCost) {
+        discountedUnitCost = inferredUnitCost;
+        discountAmount = originalUnitCost - inferredUnitCost;
+      }
+    }
+
+    return {
+      originalUnitCost,
+      discountedUnitCost,
+      discountAmount,
+      taxCost,
+      shippingCost,
+      baseTotal: discountedUnitCost + taxCost + shippingCost,
     };
   };
 
@@ -4143,9 +4163,11 @@ const writtenOffCostBreakdown = useMemo(() => {
   }, [shipmentMap, soldTargetRow?.shipment_box_id]);
 
   const soldCostBreakdown = useMemo(() => {
-    const productCost = Number(soldTargetRow?.unit_cost ?? 0);
-    const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
-    const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
+    const discountedParts = getDiscountedCostParts(soldTargetRow);
+    const productCost = discountedParts.discountedUnitCost;
+    const discountAmount = discountedParts.discountAmount;
+    const taxCost = discountedParts.taxCost;
+    const shippingCost = discountedParts.shippingCost;
     const miscCost = Number(soldTargetRow?.misc_fees ?? 0);
     const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
@@ -4179,6 +4201,7 @@ const writtenOffCostBreakdown = useMemo(() => {
 
     return {
       productCost,
+      discountAmount,
       taxCost,
       shippingCost,
       amazonInboundPerItem,
@@ -4201,9 +4224,10 @@ const writtenOffCostBreakdown = useMemo(() => {
     const enteredMiscFees = parseDecimalOrZero(soldMiscFeesStr);
     const newFbmShippingFee = parseDecimalOrZero(soldFbmShippingFeeStr);
 
-    const productCost = Number(soldTargetRow?.unit_cost ?? 0);
-    const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
-    const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
+    const discountedParts = getDiscountedCostParts(soldTargetRow);
+    const productCost = discountedParts.discountedUnitCost;
+    const taxCost = discountedParts.taxCost;
+    const shippingCost = discountedParts.shippingCost;
     const amazonInbound = soldCostBreakdown.amazonInboundPerItem;
     const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
     const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
@@ -4643,130 +4667,6 @@ async function confirmSold() {
     return purchases.find((p) => p.id === selectedPurchaseId) ?? null;
   }, [purchases, selectedPurchaseId]);
 
-  const dateEditTargetPurchase = useMemo(() => {
-    if (!dateEditPurchaseId) return null;
-    return purchases.find((p) => p.id === dateEditPurchaseId) ?? null;
-  }, [dateEditPurchaseId, purchases]);
-
-  function openDateEditFor(row: PurchaseWithProduct | null | undefined, shipment?: ShipmentRow | null) {
-    if (!row) return;
-    setDateEditError(null);
-    setDateEditPurchaseId(row.id);
-    setDateEditShipmentId(shipment?.id ?? null);
-    setDateEditForm({
-      purchase_date: row.purchase_date ?? "",
-      delivery_date: row.delivery_date ?? "",
-      expiry_date: row.expiry_date ?? "",
-      order_date: row.order_date ?? "",
-      write_off_date: row.write_off_date ?? "",
-      returned_date: row.returned_date ?? "",
-      refunded_date: row.refunded_date ?? "",
-      last_return_date: row.last_return_date ?? "",
-      shipment_date: shipment?.shipment_date ?? "",
-      checkin_date: shipment?.checkin_date ?? "",
-    });
-    setDateEditOpen(true);
-  }
-
-  function setDateEditField(field: keyof DateEditForm, value: string) {
-    setDateEditForm((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function dateEditTaxYearSource(
-    row: PurchaseWithProduct,
-    updates: Partial<Record<keyof DateEditForm, string | null>>
-  ) {
-    const currentOrUpdated = (field: keyof DateEditForm) =>
-      field in updates ? updates[field] : String(row[field as keyof PurchaseWithProduct] ?? "") || null;
-
-    const changedFields = Object.keys(updates) as (keyof DateEditForm)[];
-
-    if (changedFields.includes("last_return_date")) return currentOrUpdated("last_return_date");
-    if (row.status === "written_off" && changedFields.includes("write_off_date")) return currentOrUpdated("write_off_date");
-    if (row.status === "refunded" && changedFields.includes("refunded_date")) return currentOrUpdated("refunded_date");
-    if ((row.status === "awaiting_refund" || row.status === "refunded") && changedFields.includes("returned_date")) return currentOrUpdated("returned_date");
-    if (row.status === "sold" && changedFields.includes("order_date")) return currentOrUpdated("order_date");
-    if (changedFields.includes("purchase_date")) return currentOrUpdated("purchase_date");
-
-    for (const field of ["write_off_date", "refunded_date", "returned_date", "last_return_date", "order_date", "delivery_date", "purchase_date", "expiry_date"] as (keyof DateEditForm)[]) {
-      if (changedFields.includes(field)) {
-        const value = currentOrUpdated(field);
-        if (value) return value;
-      }
-    }
-
-    return null;
-  }
-
-  async function saveDateEdits() {
-    if (!dateEditTargetPurchase) return;
-
-    setDateEditBusy(true);
-    setDateEditError(null);
-
-    try {
-      const purchaseDateFields = [
-        "purchase_date",
-        "delivery_date",
-        "expiry_date",
-        "order_date",
-        "write_off_date",
-        "returned_date",
-        "refunded_date",
-        "last_return_date",
-      ] as (keyof DateEditForm)[];
-
-      const purchaseUpdates: Record<string, string | null> = {};
-
-      for (const field of purchaseDateFields) {
-        const nextValue = toNullDate(dateEditForm[field]);
-        const currentValue = String(dateEditTargetPurchase[field as keyof PurchaseWithProduct] ?? "") || null;
-        if (nextValue !== currentValue) {
-          purchaseUpdates[field] = nextValue;
-        }
-      }
-
-      const taxYearSource = dateEditTaxYearSource(dateEditTargetPurchase, purchaseUpdates as Partial<Record<keyof DateEditForm, string | null>>);
-      if (taxYearSource) {
-        purchaseUpdates.tax_year = computeUkTaxYear(taxYearSource);
-      }
-
-      const shipment = dateEditShipmentId ? shipments.find((s) => s.id === dateEditShipmentId) ?? null : null;
-      const shipmentUpdates: Record<string, string | null> = {};
-
-      if (shipment) {
-        const nextShipmentDate = toNullDate(dateEditForm.shipment_date);
-        const nextCheckinDate = toNullDate(dateEditForm.checkin_date);
-        if (nextShipmentDate !== (shipment.shipment_date ?? null)) shipmentUpdates.shipment_date = nextShipmentDate;
-        if (nextCheckinDate !== (shipment.checkin_date ?? null)) shipmentUpdates.checkin_date = nextCheckinDate;
-      }
-
-      if (!Object.keys(purchaseUpdates).length && !Object.keys(shipmentUpdates).length) {
-        setDateEditOpen(false);
-        return;
-      }
-
-      if (Object.keys(purchaseUpdates).length) {
-        const { error } = await supabase.from("purchases").update(purchaseUpdates).eq("id", dateEditTargetPurchase.id);
-        if (error) throw error;
-      }
-
-      if (shipment && Object.keys(shipmentUpdates).length) {
-        const { error } = await supabase.from("shipments").update(shipmentUpdates).eq("id", shipment.id);
-        if (error) throw error;
-      }
-
-      setDateEditOpen(false);
-      setDateEditPurchaseId(null);
-      setDateEditShipmentId(null);
-      await loadAll();
-    } catch (e: any) {
-      setDateEditError(e?.message ?? "Failed to save date changes.");
-    } finally {
-      setDateEditBusy(false);
-    }
-  }
-
   function openEditFor(p: PurchaseWithProduct) {
     setEditError(null);
     setSelectedPurchaseId(p.id);
@@ -4835,6 +4735,10 @@ async function confirmSold() {
         eDiscountType === "percent"
           ? Math.max(0, eUnit - (eUnit * (eDiscVal || 0)) / 100)
           : Math.max(0, eUnit - ((eDiscVal || 0) / Math.max(1, eQty))),
+      discountAmount:
+        eDiscountType === "percent"
+          ? (eUnit * (eDiscVal || 0)) / 100
+          : (eDiscVal || 0) / Math.max(1, eQty),
       tax: eTax,
       shipping: eShip,
       shipToAmazon: amazonInboundPerItem,
@@ -4982,6 +4886,7 @@ async function confirmSold() {
 
     const moneyRows = [
       ["Unit Cost", money(soldCostBreakdown.productCost)],
+      ...(soldCostBreakdown.discountAmount > 0 ? [["Discount", `-${money(soldCostBreakdown.discountAmount)}`]] : []),
       ["Tax", money(soldCostBreakdown.taxCost)],
       ["Shipping", money(soldCostBreakdown.shippingCost)],
       ["Ship to Amazon", money(soldCostBreakdown.amazonInboundPerItem)],
@@ -6793,10 +6698,7 @@ async function confirmSold() {
           </div>
 
           <div className="rounded-2xl border p-4">
-            <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
-              <span>Key Dates &amp; Movement</span>
-              <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(writtenOffDetailRow, writtenOffDetailShipment)} title="Edit dates">✏️</button>
-            </div>
+            <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
             <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
               <div className="font-semibold">Purchase Date:</div><div>{fmtDate(writtenOffDetailRow?.purchase_date ?? null)}</div>
               <div className="font-semibold">Delivery Date:</div><div>{fmtDate(writtenOffDetailRow?.delivery_date ?? null)}</div>
@@ -6832,16 +6734,16 @@ async function confirmSold() {
             <div className="rounded-xl border bg-neutral-50 p-4">
               <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
               <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(writtenOffCostBreakdown.productCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Tax</span><b>{money(writtenOffCostBreakdown.taxCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Shipping</span><b>{money(writtenOffCostBreakdown.shippingCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(writtenOffCostBreakdown.amazonInboundPerItem)}</b></div>
-                <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(writtenOffCostBreakdown.amazonFees)}</b></div>
-                <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(writtenOffCostBreakdown.miscCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(writtenOffCostBreakdown.writtenOffCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(writtenOffCostBreakdown.returnShippingCost)}</b></div>
-                <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(writtenOffCostBreakdown.fbmShippingCost)}</b></div>
-                <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(writtenOffCostBreakdown.totalCostBasis)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(writtenOffCostBreakdown.productCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(writtenOffCostBreakdown.taxCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(writtenOffCostBreakdown.shippingCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(writtenOffCostBreakdown.amazonInboundPerItem)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Amazon Fees" help="Amazon selling fees charged on the sale." /><b>{money(writtenOffCostBreakdown.amazonFees)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Misc Cost" help="Extra miscellaneous cost attached to this item or sale." /><b>{money(writtenOffCostBreakdown.miscCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Write Off Fee" help="Extra fee recorded when the item is written off. It remains recorded even after restore." /><b>{money(writtenOffCostBreakdown.writtenOffCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Return Fees" help="Return/refund fee recorded for this item." /><b>{money(writtenOffCostBreakdown.returnShippingCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="FBM Shipping" help="Shipping cost paid for an FBM sale. This stays as a cost even if the item is returned." /><b>{money(writtenOffCostBreakdown.fbmShippingCost)}</b></div>
+                <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(writtenOffCostBreakdown.totalCostBasis)}</b></div>
               </div>
             </div>
 
@@ -7797,10 +7699,7 @@ async function confirmSold() {
                 </div>
 
                 <div className="rounded-2xl border p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
-                    <span>Key Dates &amp; Movement</span>
-                    <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(soldTargetRow, soldTargetShipment)} title="Edit dates">✏️</button>
-                  </div>
+                  <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
                   <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
                     <div className="font-semibold">Purchase Date:</div><div>{fmtDate(soldTargetRow?.purchase_date ?? null)}</div>
                     <div className="font-semibold">Delivery Date:</div><div>{fmtDate(soldTargetRow?.delivery_date ?? null)}</div>
@@ -7860,16 +7759,19 @@ async function confirmSold() {
                   <div className="rounded-xl border bg-neutral-50 p-4">
                     <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                     <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                      <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(soldCostBreakdown.productCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Tax</span><b>{money(soldCostBreakdown.taxCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Shipping</span><b>{money(soldCostBreakdown.shippingCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(soldCostBreakdown.amazonInboundPerItem)}</b></div>
-                      <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(displayedSoldAmazonFees)}</b></div>
-                      <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(displayedSoldMiscCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(soldCostBreakdown.writeOffFee)}</b></div>
-                      <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(soldCostBreakdown.returnShippingCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(displayedSoldFbmShipping)}</b></div>
-                      <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(displayedSoldTotalCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(soldCostBreakdown.productCost)}</b></div>
+                      {soldCostBreakdown.discountAmount > 0 ? (
+                        <div className="flex items-center justify-between"><CostBreakdownLabel label="Discount" help="Discount removed from the item cost only. Shipping and tax are not discounted." /><b>-{money(soldCostBreakdown.discountAmount)}</b></div>
+                      ) : null}
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(soldCostBreakdown.taxCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(soldCostBreakdown.shippingCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(soldCostBreakdown.amazonInboundPerItem)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Amazon Fees" help="Amazon selling fees charged on the sale." /><b>{money(displayedSoldAmazonFees)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Misc Cost" help="Extra miscellaneous cost attached to this item or sale." /><b>{money(displayedSoldMiscCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Write Off Fee" help="Extra fee recorded when the item is written off. It remains recorded even after restore." /><b>{money(soldCostBreakdown.writeOffFee)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Return Fees" help="Return/refund fee recorded for this item." /><b>{money(soldCostBreakdown.returnShippingCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="FBM Shipping" help="Shipping cost paid for an FBM sale. This stays as a cost even if the item is returned." /><b>{money(displayedSoldFbmShipping)}</b></div>
+                      <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(displayedSoldTotalCost)}</b></div>
                     </div>
                   </div>
 
@@ -8570,10 +8472,7 @@ async function confirmSold() {
                 </div>
 
                 <div className="rounded-2xl border p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
-                    <span>Key Dates &amp; Movement</span>
-                    <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(returnedItemDetailRow)} title="Edit dates">✏️</button>
-                  </div>
+                  <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
                   <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
                     <div className="font-semibold">Purchase Date:</div><div>{fmtDate(returnedItemDetailRow.purchase_date ?? null)}</div>
                     <div className="font-semibold">Delivery Date:</div><div>{fmtDate(returnedItemDetailRow.delivery_date ?? null)}</div>
@@ -8618,10 +8517,10 @@ async function confirmSold() {
                   <div className="rounded-xl border bg-neutral-50 p-4">
                     <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                     <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                      <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0))}</b></div>
-                      <div className="flex items-center justify-between"><span>Tax</span><b>{money(Number(returnedItemDetailRow.tax_amount ?? 0))}</b></div>
-                      <div className="flex items-center justify-between"><span>Shipping</span><b>{money(Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
-                      <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0) + Number(returnedItemDetailRow.tax_amount ?? 0) + Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(Number(returnedItemDetailRow.tax_amount ?? 0))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0) + Number(returnedItemDetailRow.tax_amount ?? 0) + Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
                     </div>
                   </div>
 
@@ -8649,94 +8548,6 @@ async function confirmSold() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {dateEditOpen && dateEditTargetPurchase ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30" onMouseDown={() => setDateEditOpen(false)}>
-          <div className={modalCard()} onMouseDown={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between border-b p-5">
-              <div>
-                <div className="text-lg font-semibold text-neutral-900">Edit Key Dates</div>
-                <div className="mt-1 text-xs text-neutral-600">
-                  Only changed dates will be updated. Unchanged dates stay exactly as they are.
-                </div>
-              </div>
-              <button type="button" className={buttonClass()} onClick={() => setDateEditOpen(false)}>
-                Close
-              </button>
-            </div>
-
-            <form
-              className="space-y-4 p-5"
-              onSubmit={(e) => {
-                e.preventDefault();
-                saveDateEdits();
-              }}
-            >
-              {dateEditError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  {dateEditError}
-                </div>
-              ) : null}
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Purchase Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.purchase_date} onChange={(e) => setDateEditField("purchase_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Delivery Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.delivery_date} onChange={(e) => setDateEditField("delivery_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Expiry Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.expiry_date} onChange={(e) => setDateEditField("expiry_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Order Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.order_date} onChange={(e) => setDateEditField("order_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Write Off Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.write_off_date} onChange={(e) => setDateEditField("write_off_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Returned Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.returned_date} onChange={(e) => setDateEditField("returned_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Refunded Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.refunded_date} onChange={(e) => setDateEditField("refunded_date", e.target.value)} />
-                </label>
-                <label className="space-y-1">
-                  <div className={fieldLabel()}>Last Return Date</div>
-                  <input type="date" className={inputClass()} value={dateEditForm.last_return_date} onChange={(e) => setDateEditField("last_return_date", e.target.value)} />
-                </label>
-                {dateEditShipmentId ? (
-                  <>
-                    <label className="space-y-1">
-                      <div className={fieldLabel()}>Shipment Date</div>
-                      <input type="date" className={inputClass()} value={dateEditForm.shipment_date} onChange={(e) => setDateEditField("shipment_date", e.target.value)} />
-                    </label>
-                    <label className="space-y-1">
-                      <div className={fieldLabel()}>Check-in Date</div>
-                      <input type="date" className={inputClass()} value={dateEditForm.checkin_date} onChange={(e) => setDateEditField("checkin_date", e.target.value)} />
-                    </label>
-                  </>
-                ) : null}
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button type="button" className={buttonClass()} onClick={() => setDateEditOpen(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className={buttonClass(true)} disabled={dateEditBusy}>
-                  {dateEditBusy ? "Saving..." : "Save Dates"}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       ) : null}
@@ -8794,10 +8605,7 @@ async function confirmSold() {
                     </div>
 
                     <div className="rounded-2xl border p-4">
-                      <div className="mb-3 flex items-center justify-between gap-3 text-sm font-semibold text-neutral-900">
-                        <span>Key Dates &amp; Movement</span>
-                        <button type="button" className="rounded-lg border px-2 py-1 text-xs hover:bg-neutral-50" onClick={() => openDateEditFor(selectedPurchase, getShipmentForPurchase(selectedPurchase))} title="Edit dates">✏️</button>
-                      </div>
+                      <div className="mb-3 text-sm font-semibold text-neutral-900">Key Dates &amp; Movement</div>
                       <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[150px_1fr]">
                         <div className="font-semibold">Purchase Date:</div><div>{fmtDate(selectedPurchase.purchase_date ?? null)}</div>
                         <div className="font-semibold">Delivery Date:</div><div>{fmtDate(selectedPurchase.delivery_date ?? null)}</div>
@@ -8871,16 +8679,19 @@ async function confirmSold() {
                       <div className="rounded-xl border bg-neutral-50 p-4">
                         <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                         <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                          <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(editLiveCostBreakdown.unitCost)}</b></div>
-                          <div className="flex items-center justify-between"><span>Tax</span><b>{money(editLiveCostBreakdown.tax)}</b></div>
-                          <div className="flex items-center justify-between"><span>Shipping</span><b>{money(editLiveCostBreakdown.shipping)}</b></div>
-                          <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(editLiveCostBreakdown.shipToAmazon)}</b></div>
-                          <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(editLiveCostBreakdown.amazonFees)}</b></div>
-                          <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(editLiveCostBreakdown.miscCost)}</b></div>
-                          <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(editLiveCostBreakdown.writeOffFee)}</b></div>
-                          <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(editLiveCostBreakdown.returnFees)}</b></div>
-                          <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(editLiveCostBreakdown.fbmShipping)}</b></div>
-                          <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(editLiveCostBreakdown.totalCostBasis)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(editLiveCostBreakdown.unitCost)}</b></div>
+                          {editLiveCostBreakdown.discountAmount > 0 ? (
+                            <div className="flex items-center justify-between"><CostBreakdownLabel label="Discount" help="Discount removed from the item cost only. Shipping and tax are not discounted." /><b>-{money(editLiveCostBreakdown.discountAmount)}</b></div>
+                          ) : null}
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(editLiveCostBreakdown.tax)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(editLiveCostBreakdown.shipping)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(editLiveCostBreakdown.shipToAmazon)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Amazon Fees" help="Amazon selling fees charged on the sale." /><b>{money(editLiveCostBreakdown.amazonFees)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Misc Cost" help="Extra miscellaneous cost attached to this item or sale." /><b>{money(editLiveCostBreakdown.miscCost)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Write Off Fee" help="Extra fee recorded when the item is written off. It remains recorded even after restore." /><b>{money(editLiveCostBreakdown.writeOffFee)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Return Fees" help="Return/refund fee recorded for this item." /><b>{money(editLiveCostBreakdown.returnFees)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="FBM Shipping" help="Shipping cost paid for an FBM sale. This stays as a cost even if the item is returned." /><b>{money(editLiveCostBreakdown.fbmShipping)}</b></div>
+                          <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(editLiveCostBreakdown.totalCostBasis)}</b></div>
                         </div>
                       </div>
 
