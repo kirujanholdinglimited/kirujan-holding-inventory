@@ -126,6 +126,21 @@ function money(n: number) {
   })}`;
 }
 
+function CostBreakdownLabel({ label, help }: { label: string; help: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{label}</span>
+      <span
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-neutral-400 text-[10px] font-semibold text-neutral-600"
+        title={help}
+        aria-label={help}
+      >
+        ?
+      </span>
+    </span>
+  );
+}
+
 function todayISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -1792,7 +1807,7 @@ function InventoryPageContent() {
 
     const seen = new Set<string>();
     const reasons = (data ?? [])
-      .map((r: any) => titleCaseEveryWord(String(r.write_off_reason ?? "").trim()))
+      .map((r: any) => titleCaseEveryWord(parseWriteOffDetails(r.write_off_reason ?? null).reason))
       .filter((s: string) => {
         if (!s) return false;
         const key = s.toLowerCase();
@@ -2113,7 +2128,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
     });
 
     purchases.forEach((p) => {
-      const s = titleCaseEveryWord(String(p.write_off_reason ?? "").trim());
+      const s = titleCaseEveryWord(parseWriteOffDetails(p.write_off_reason ?? null).reason);
       if (s) set.add(s);
     });
 
@@ -2178,7 +2193,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
   const getPurchaseTotals = (row: PurchaseWithProduct | null | undefined) => {
     const baseTotal = Number(row?.total_cost ?? 0);
     const miscFees = Number(row?.misc_fees ?? 0);
-    const amazonFees = row?.status === "selling" || row?.status === "written_off" || (row?.sale_type === "FBM" && Boolean(row?.last_return_date))
+    const amazonFees = Boolean(row?.last_return_date)
       ? 0
       : Number(row?.amazon_fees ?? 0);
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
@@ -2212,6 +2227,42 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
         fbmShippingFee +
         amazonFees +
         writeOffFee,
+    };
+  };
+
+
+  const getDiscountedCostParts = (row: PurchaseWithProduct | null | undefined) => {
+    const originalUnitCost = Number(row?.unit_cost ?? 0);
+    const taxCost = Number(row?.tax_amount ?? 0);
+    const shippingCost = Number(row?.shipping_cost ?? 0);
+    const savedBaseTotal = Number(row?.total_cost ?? 0);
+    const discountType = row?.discount_type ?? null;
+    const discountValue = Number(row?.discount_value ?? 0);
+
+    let discountedUnitCost = originalUnitCost;
+    let discountAmount = 0;
+
+    if (discountType === "percent" && discountValue > 0) {
+      discountAmount = (originalUnitCost * discountValue) / 100;
+      discountedUnitCost = Math.max(0, originalUnitCost - discountAmount);
+    } else if (discountType === "fixed" && discountValue > 0) {
+      discountAmount = discountValue;
+      discountedUnitCost = Math.max(0, originalUnitCost - discountAmount);
+    } else if (savedBaseTotal > 0) {
+      const inferredUnitCost = Math.max(0, savedBaseTotal - taxCost - shippingCost);
+      if (inferredUnitCost < originalUnitCost) {
+        discountedUnitCost = inferredUnitCost;
+        discountAmount = originalUnitCost - inferredUnitCost;
+      }
+    }
+
+    return {
+      originalUnitCost,
+      discountedUnitCost,
+      discountAmount,
+      taxCost,
+      shippingCost,
+      baseTotal: discountedUnitCost + taxCost + shippingCost,
     };
   };
 
@@ -4112,9 +4163,11 @@ const writtenOffCostBreakdown = useMemo(() => {
   }, [shipmentMap, soldTargetRow?.shipment_box_id]);
 
   const soldCostBreakdown = useMemo(() => {
-    const productCost = Number(soldTargetRow?.unit_cost ?? 0);
-    const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
-    const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
+    const discountedParts = getDiscountedCostParts(soldTargetRow);
+    const productCost = discountedParts.discountedUnitCost;
+    const discountAmount = discountedParts.discountAmount;
+    const taxCost = discountedParts.taxCost;
+    const shippingCost = discountedParts.shippingCost;
     const miscCost = Number(soldTargetRow?.misc_fees ?? 0);
     const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
@@ -4148,6 +4201,7 @@ const writtenOffCostBreakdown = useMemo(() => {
 
     return {
       productCost,
+      discountAmount,
       taxCost,
       shippingCost,
       amazonInboundPerItem,
@@ -4170,9 +4224,10 @@ const writtenOffCostBreakdown = useMemo(() => {
     const enteredMiscFees = parseDecimalOrZero(soldMiscFeesStr);
     const newFbmShippingFee = parseDecimalOrZero(soldFbmShippingFeeStr);
 
-    const productCost = Number(soldTargetRow?.unit_cost ?? 0);
-    const taxCost = Number(soldTargetRow?.tax_amount ?? 0);
-    const shippingCost = Number(soldTargetRow?.shipping_cost ?? 0);
+    const discountedParts = getDiscountedCostParts(soldTargetRow);
+    const productCost = discountedParts.discountedUnitCost;
+    const taxCost = discountedParts.taxCost;
+    const shippingCost = discountedParts.shippingCost;
     const amazonInbound = soldCostBreakdown.amazonInboundPerItem;
     const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
     const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
@@ -4680,6 +4735,10 @@ async function confirmSold() {
         eDiscountType === "percent"
           ? Math.max(0, eUnit - (eUnit * (eDiscVal || 0)) / 100)
           : Math.max(0, eUnit - ((eDiscVal || 0) / Math.max(1, eQty))),
+      discountAmount:
+        eDiscountType === "percent"
+          ? (eUnit * (eDiscVal || 0)) / 100
+          : (eDiscVal || 0) / Math.max(1, eQty),
       tax: eTax,
       shipping: eShip,
       shipToAmazon: amazonInboundPerItem,
@@ -4827,6 +4886,7 @@ async function confirmSold() {
 
     const moneyRows = [
       ["Unit Cost", money(soldCostBreakdown.productCost)],
+      ...(soldCostBreakdown.discountAmount > 0 ? [["Discount", `-${money(soldCostBreakdown.discountAmount)}`]] : []),
       ["Tax", money(soldCostBreakdown.taxCost)],
       ["Shipping", money(soldCostBreakdown.shippingCost)],
       ["Ship to Amazon", money(soldCostBreakdown.amazonInboundPerItem)],
@@ -6674,16 +6734,16 @@ async function confirmSold() {
             <div className="rounded-xl border bg-neutral-50 p-4">
               <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
               <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(writtenOffCostBreakdown.productCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Tax</span><b>{money(writtenOffCostBreakdown.taxCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Shipping</span><b>{money(writtenOffCostBreakdown.shippingCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(writtenOffCostBreakdown.amazonInboundPerItem)}</b></div>
-                <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(writtenOffCostBreakdown.amazonFees)}</b></div>
-                <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(writtenOffCostBreakdown.miscCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(writtenOffCostBreakdown.writtenOffCost)}</b></div>
-                <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(writtenOffCostBreakdown.returnShippingCost)}</b></div>
-                <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(writtenOffCostBreakdown.fbmShippingCost)}</b></div>
-                <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(writtenOffCostBreakdown.totalCostBasis)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(writtenOffCostBreakdown.productCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(writtenOffCostBreakdown.taxCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(writtenOffCostBreakdown.shippingCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(writtenOffCostBreakdown.amazonInboundPerItem)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Amazon Fees" help="Amazon selling fees charged on the sale." /><b>{money(writtenOffCostBreakdown.amazonFees)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Misc Cost" help="Extra miscellaneous cost attached to this item or sale." /><b>{money(writtenOffCostBreakdown.miscCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Write Off Fee" help="Extra fee recorded when the item is written off. It remains recorded even after restore." /><b>{money(writtenOffCostBreakdown.writtenOffCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="Return Fees" help="Return/refund fee recorded for this item." /><b>{money(writtenOffCostBreakdown.returnShippingCost)}</b></div>
+                <div className="flex items-center justify-between"><CostBreakdownLabel label="FBM Shipping" help="Shipping cost paid for an FBM sale. This stays as a cost even if the item is returned." /><b>{money(writtenOffCostBreakdown.fbmShippingCost)}</b></div>
+                <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(writtenOffCostBreakdown.totalCostBasis)}</b></div>
               </div>
             </div>
 
@@ -7699,16 +7759,19 @@ async function confirmSold() {
                   <div className="rounded-xl border bg-neutral-50 p-4">
                     <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                     <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                      <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(soldCostBreakdown.productCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Tax</span><b>{money(soldCostBreakdown.taxCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Shipping</span><b>{money(soldCostBreakdown.shippingCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(soldCostBreakdown.amazonInboundPerItem)}</b></div>
-                      <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(displayedSoldAmazonFees)}</b></div>
-                      <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(displayedSoldMiscCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(soldCostBreakdown.writeOffFee)}</b></div>
-                      <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(soldCostBreakdown.returnShippingCost)}</b></div>
-                      <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(displayedSoldFbmShipping)}</b></div>
-                      <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(displayedSoldTotalCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(soldCostBreakdown.productCost)}</b></div>
+                      {soldCostBreakdown.discountAmount > 0 ? (
+                        <div className="flex items-center justify-between"><CostBreakdownLabel label="Discount" help="Discount removed from the item cost only. Shipping and tax are not discounted." /><b>-{money(soldCostBreakdown.discountAmount)}</b></div>
+                      ) : null}
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(soldCostBreakdown.taxCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(soldCostBreakdown.shippingCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(soldCostBreakdown.amazonInboundPerItem)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Amazon Fees" help="Amazon selling fees charged on the sale." /><b>{money(displayedSoldAmazonFees)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Misc Cost" help="Extra miscellaneous cost attached to this item or sale." /><b>{money(displayedSoldMiscCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Write Off Fee" help="Extra fee recorded when the item is written off. It remains recorded even after restore." /><b>{money(soldCostBreakdown.writeOffFee)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Return Fees" help="Return/refund fee recorded for this item." /><b>{money(soldCostBreakdown.returnShippingCost)}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="FBM Shipping" help="Shipping cost paid for an FBM sale. This stays as a cost even if the item is returned." /><b>{money(displayedSoldFbmShipping)}</b></div>
+                      <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(displayedSoldTotalCost)}</b></div>
                     </div>
                   </div>
 
@@ -8454,10 +8517,10 @@ async function confirmSold() {
                   <div className="rounded-xl border bg-neutral-50 p-4">
                     <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                     <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                      <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0))}</b></div>
-                      <div className="flex items-center justify-between"><span>Tax</span><b>{money(Number(returnedItemDetailRow.tax_amount ?? 0))}</b></div>
-                      <div className="flex items-center justify-between"><span>Shipping</span><b>{money(Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
-                      <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0) + Number(returnedItemDetailRow.tax_amount ?? 0) + Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(Number(returnedItemDetailRow.tax_amount ?? 0))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0) + Number(returnedItemDetailRow.tax_amount ?? 0) + Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
                     </div>
                   </div>
 
@@ -8616,16 +8679,19 @@ async function confirmSold() {
                       <div className="rounded-xl border bg-neutral-50 p-4">
                         <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                         <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                          <div className="flex items-center justify-between"><span>Unit Cost</span><b>{money(editLiveCostBreakdown.unitCost)}</b></div>
-                          <div className="flex items-center justify-between"><span>Tax</span><b>{money(editLiveCostBreakdown.tax)}</b></div>
-                          <div className="flex items-center justify-between"><span>Shipping</span><b>{money(editLiveCostBreakdown.shipping)}</b></div>
-                          <div className="flex items-center justify-between"><span>Ship to Amazon</span><b>{money(editLiveCostBreakdown.shipToAmazon)}</b></div>
-                          <div className="flex items-center justify-between"><span>Amazon Fees</span><b>{money(editLiveCostBreakdown.amazonFees)}</b></div>
-                          <div className="flex items-center justify-between"><span>Misc Cost</span><b>{money(editLiveCostBreakdown.miscCost)}</b></div>
-                          <div className="flex items-center justify-between"><span>Write Off Fee</span><b>{money(editLiveCostBreakdown.writeOffFee)}</b></div>
-                          <div className="flex items-center justify-between"><span>Return Fees</span><b>{money(editLiveCostBreakdown.returnFees)}</b></div>
-                          <div className="flex items-center justify-between"><span>FBM Shipping</span><b>{money(editLiveCostBreakdown.fbmShipping)}</b></div>
-                          <div className="flex items-center justify-between border-t pt-2"><span>Total Cost Basis</span><b>{money(editLiveCostBreakdown.totalCostBasis)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(editLiveCostBreakdown.unitCost)}</b></div>
+                          {editLiveCostBreakdown.discountAmount > 0 ? (
+                            <div className="flex items-center justify-between"><CostBreakdownLabel label="Discount" help="Discount removed from the item cost only. Shipping and tax are not discounted." /><b>-{money(editLiveCostBreakdown.discountAmount)}</b></div>
+                          ) : null}
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(editLiveCostBreakdown.tax)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(editLiveCostBreakdown.shipping)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(editLiveCostBreakdown.shipToAmazon)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Amazon Fees" help="Amazon selling fees charged on the sale." /><b>{money(editLiveCostBreakdown.amazonFees)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Misc Cost" help="Extra miscellaneous cost attached to this item or sale." /><b>{money(editLiveCostBreakdown.miscCost)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Write Off Fee" help="Extra fee recorded when the item is written off. It remains recorded even after restore." /><b>{money(editLiveCostBreakdown.writeOffFee)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="Return Fees" help="Return/refund fee recorded for this item." /><b>{money(editLiveCostBreakdown.returnFees)}</b></div>
+                          <div className="flex items-center justify-between"><CostBreakdownLabel label="FBM Shipping" help="Shipping cost paid for an FBM sale. This stays as a cost even if the item is returned." /><b>{money(editLiveCostBreakdown.fbmShipping)}</b></div>
+                          <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(editLiveCostBreakdown.totalCostBasis)}</b></div>
                         </div>
                       </div>
 
