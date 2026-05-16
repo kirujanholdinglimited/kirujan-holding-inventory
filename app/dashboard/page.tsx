@@ -1127,9 +1127,9 @@ function rowCustomerReturnFee(row: Record<string, any>): number {
 
 function rowCustomerReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.last_return_date ??
-      row.return_date ??
+    row.return_date ??
       row.returned_date ??
+      row.last_return_date ??
       row.refunded_date ??
       row.refund_date ??
       row.return_created_at ??
@@ -1160,8 +1160,7 @@ function rowReturnFee(row: Record<string, any>): number {
 
 function rowReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.last_return_date ??
-      row.returned_date ??
+    row.returned_date ??
       row.return_date ??
       row.refunded_date ??
       row.refund_date ??
@@ -1221,15 +1220,15 @@ function rowItemCostTotal(row: Record<string, any>): number {
     "buy_cost",
     "price",
   ]);
-  return Math.trunc((unitCost * qty) * 100) / 100;
+  return moneyValue(unitCost * qty);
 }
 
 function rowVatTotal(row: Record<string, any>): number {
-  return Math.trunc(firstNumber(row, ["tax_amount"]) * 100) / 100;
+  return moneyValue(firstNumber(row, ["tax_amount"]));
 }
 
 function rowInboundShippingTotal(row: Record<string, any>): number {
-  return Math.trunc(firstNumber(row, ["shipping_cost"]) * 100) / 100;
+  return moneyValue(firstNumber(row, ["shipping_cost"]));
 }
 
 function rowStoredTotalCost(row: Record<string, any>): number {
@@ -1287,6 +1286,44 @@ function rowValueAtCost(row: Record<string, any>): number {
   const storedTotal = rowStoredTotalCost(row);
   if (storedTotal > 0) return storedTotal;
   return moneyValue(rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row));
+}
+
+function rowSupplierRefundAmount(row: Record<string, any>): number {
+  return moneyValue(
+    firstNumber(row, [
+      "refund_amount",
+      "refunded_amount",
+      "supplier_refund_amount",
+      "merchant_refund_amount",
+      "return_refund_amount",
+      "refund_total",
+      "refunded_total",
+    ])
+  );
+}
+
+function rowSupplierRefundDate(row: Record<string, any>): Date | null {
+  return parseDate(
+    row.refunded_date ??
+      row.refund_date ??
+      row.returned_date ??
+      row.return_date ??
+      row.updated_at ??
+      row.created_at
+  );
+}
+
+function isConfirmedSupplierRefund(row: Record<string, any>): boolean {
+  return normalizeStatus(row.status) === "refunded" && rowSupplierRefundAmount(row) > 0;
+}
+
+function rowSupplierRefundOriginalCost(row: Record<string, any>): number {
+  const discountedTotal = rowValueAtCost(row);
+  return discountedTotal > 0 ? discountedTotal : moneyValue(rowItemCostTotal(row) + rowVatTotal(row) + rowInboundShippingTotal(row));
+}
+
+function rowSupplierRefundLoss(row: Record<string, any>): number {
+  return moneyValue(Math.max(0, rowSupplierRefundOriginalCost(row) - rowSupplierRefundAmount(row)));
 }
 
 function rowTurnover(row: Record<string, any>): number {
@@ -2371,6 +2408,16 @@ export default function DashboardPage() {
     [purchaseRows, rangeBounds]
   );
 
+  const activeSupplierRefundRows = useMemo(
+    () =>
+      purchaseRows.filter(
+        (row) =>
+          isConfirmedSupplierRefund(row) &&
+          inDateRange(rowSupplierRefundDate(row), rangeBounds.start, rangeBounds.end)
+      ),
+    [purchaseRows, rangeBounds]
+  );
+
   const activeSoldRows = useMemo(
     () =>
       purchaseRows.filter(
@@ -2505,6 +2552,7 @@ export default function DashboardPage() {
     const customerReturnFeeTotal = activeReturnFeeRows.reduce((sum, row) => sum + rowReturnFee(row), 0);
     const fbmShippingFeeTotal = activeFbmShippingFeeRows.reduce((sum, row) => sum + rowFbmShippingFee(row), 0);
     const writeOffTotal = activeWriteOffFeeRows.reduce((sum, row) => sum + rowWriteOffFee(row), 0);
+    const supplierRefundLossTotal = activeSupplierRefundRows.reduce((sum, row) => sum + rowSupplierRefundLoss(row), 0);
     const loanInterestTotal = activeFinanceRows
       .filter(isLoanInterestFinanceRow)
       .reduce((sum, row) => sum + safeNumber(row.amount), 0);
@@ -2516,6 +2564,7 @@ export default function DashboardPage() {
     addRow("Inventory Page", "Inventory", "Customer Return Fee", customerReturnFeeTotal);
     addRow("Inventory Page", "Inventory", "FBM Shipment Fee", fbmShippingFeeTotal);
     addRow("Inventory Page", "Inventory", "Write Off", writeOffTotal);
+    addRow("Inventory Page", "Inventory", "Item Defect Return To Merchant Cost", supplierRefundLossTotal);
     addRow("Finance Page", "Finance", "Loan Interest", loanInterestTotal);
 
     activeExpenseRows
@@ -2537,7 +2586,7 @@ export default function DashboardPage() {
       if (a.mainCategory !== b.mainCategory) return a.mainCategory.localeCompare(b.mainCategory);
       return b.value - a.value;
     });
-  }, [activeExpenseRows, activeFinanceRows, activePurchaseRows, activeShipmentRows, activeSoldRows, activeWriteOffFeeRows, activeReturnFeeRows, activeFbmShippingFeeRows]);
+  }, [activeExpenseRows, activeFinanceRows, activePurchaseRows, activeShipmentRows, activeSoldRows, activeWriteOffFeeRows, activeReturnFeeRows, activeFbmShippingFeeRows, activeSupplierRefundRows]);
 
   const prototypePlCards = useMemo<Record<PrototypePLCardKey, PrototypePLCardData>>(() => {
     const sales = activeSoldRows.reduce((sum, row) => sum + rowTurnover(row), 0);
@@ -2550,7 +2599,17 @@ export default function DashboardPage() {
       (sum, row) => sum + rowInboundShippingTotal(row),
       0
     );
-    const cogs = activePurchaseRows.reduce((sum, row) => sum + rowValueAtCost(row), 0);
+    const supplierRefundOriginalCostTotal = activeSupplierRefundRows.reduce(
+      (sum, row) => sum + rowSupplierRefundOriginalCost(row),
+      0
+    );
+    const supplierRefundLossTotal = activeSupplierRefundRows.reduce(
+      (sum, row) => sum + rowSupplierRefundLoss(row),
+      0
+    );
+    const cogs = moneyValue(
+      activePurchaseRows.reduce((sum, row) => sum + rowValueAtCost(row), 0) - supplierRefundOriginalCostTotal
+    );
     const fixedAssets = activeExpenseRows
       .filter((row) => String(row.operational_category ?? "").trim().toLowerCase() === "equipment")
       .reduce((sum, row) => sum + toNumber(row.amount), 0);
@@ -2580,7 +2639,8 @@ export default function DashboardPage() {
       fbmShippingFee +
       writeOffCost +
       loanInterestCost +
-      otherOperatingCost;
+      otherOperatingCost +
+      supplierRefundLossTotal;
     const grossProfit = sales - cogs;
     const finalProfit = grossProfit - operatingCost;
 
@@ -2606,6 +2666,7 @@ export default function DashboardPage() {
           { label: "VAT total", value: vatTotal, negative: true },
           { label: "Inbound shipping total", value: inboundShippingTotal, negative: true },
           { label: "Items purchased in selected tax year", value: activePurchaseRows.length, isCount: true },
+          { label: "Confirmed refunded items removed", value: supplierRefundOriginalCostTotal },
           { label: "Total cost of goods", value: cogs, negative: true },
         ],
         footer: "Hard-wired rule: Cost of Goods = all purchases in the selected tax year (item cost + VAT + inbound shipping), regardless of status.",
@@ -2674,7 +2735,7 @@ export default function DashboardPage() {
         footer: "Net profit / loss = Sales - Cost of goods - Business running expenses.",
       },
     };
-  }, [activeExpenseRows, activeFinanceRows, activeShipmentRows, activeSoldRows, activeWriteOffFeeRows, activePurchaseRows, activeReturnFeeRows, activeFbmShippingFeeRows, prototypeExpenseBreakdown, prototypeFixedAssetBreakdown]);
+  }, [activeExpenseRows, activeFinanceRows, activeShipmentRows, activeSoldRows, activeWriteOffFeeRows, activePurchaseRows, activeReturnFeeRows, activeFbmShippingFeeRows, activeSupplierRefundRows, prototypeExpenseBreakdown, prototypeFixedAssetBreakdown]);
 
   const prototypePlCardList = useMemo(
     () => [
@@ -2742,13 +2803,26 @@ export default function DashboardPage() {
       const purchaseRowsForMonth = purchaseRows.filter((row) =>
         inDateRange(parseDate(row.purchase_date ?? row.created_at), month.start, month.end)
       );
+      const supplierRefundRowsForMonth = purchaseRows.filter(
+        (row) =>
+          isConfirmedSupplierRefund(row) &&
+          inDateRange(rowSupplierRefundDate(row), month.start, month.end)
+      );
       const shipmentRowsForMonth = shipmentRows.filter((row) =>
         inDateRange(parseDate(row.shipment_date ?? row.sent_date ?? row.shipped_date ?? row.created_at), month.start, month.end)
       );
 
       const amazonFees = moneyValue(soldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0));
+      const supplierRefundOriginalCost = supplierRefundRowsForMonth.reduce(
+        (sum, row) => sum + rowSupplierRefundOriginalCost(row),
+        0
+      );
+      const supplierRefundLoss = supplierRefundRowsForMonth.reduce(
+        (sum, row) => sum + rowSupplierRefundLoss(row),
+        0
+      );
       const productCost = moneyValue(
-        purchaseRowsForMonth.reduce((sum, row) => sum + rowValueAtCost(row), 0)
+        purchaseRowsForMonth.reduce((sum, row) => sum + rowValueAtCost(row), 0) - supplierRefundOriginalCost
       );
       const shipments = moneyValue(shipmentRowsForMonth.reduce((sum, row) => sum + shipmentTotalWithTax(row), 0) + fbmShippingRows.reduce((sum, row) => sum + rowFbmShippingFee(row), 0));
       const refunds = moneyValue(
@@ -2777,7 +2851,9 @@ export default function DashboardPage() {
         0
       );
       const expenses = moneyValue(
-        expenseRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0) + loanInterestExpensesForMonth
+        expenseRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0) +
+          loanInterestExpensesForMonth +
+          supplierRefundLoss
       );
       const fixedAssets = 0;
       const sales = soldRows.reduce((sum, row) => sum + toNumber(row.sold_amount), 0);
@@ -3598,7 +3674,7 @@ export default function DashboardPage() {
     stock.home.units +
     stock.outbound.units +
     stock.selling.units +
-    0;
+    stock.damaged.units;
 
   const totalStockValue =
     stock.inbound.value +
