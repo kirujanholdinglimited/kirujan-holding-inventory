@@ -75,6 +75,12 @@ function toNumber(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function titleCaseEveryWord(value: string) {
+  return value.replace(/[^\s]+/g, (word) =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  );
+}
+
 function getTodayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -195,6 +201,7 @@ export default function FinancePage() {
   const [mode, setMode] = useState<FinanceMode>("in");
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [referenceFocused, setReferenceFocused] = useState(false);
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -205,6 +212,13 @@ export default function FinancePage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editForm, setEditForm] = useState<FormState>(EMPTY_FORM);
+
+  const accountSourceOptions = useMemo(() => {
+    const values = transactions
+      .map((tx) => String(tx.reference ?? "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+  }, [transactions]);
 
   useEffect(() => {
     loadTransactions();
@@ -666,7 +680,10 @@ export default function FinancePage() {
                     type="text"
                     value={form.description}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, description: e.target.value }))
+                      setForm((prev) => ({
+                        ...prev,
+                        description: titleCaseEveryWord(e.target.value),
+                      }))
                     }
                     className={inputClass()}
                     placeholder={
@@ -677,16 +694,23 @@ export default function FinancePage() {
                   />
                 </div>
 
-                <div>
+                <div className="relative">
                   <label className="text-sm font-medium text-neutral-700">
                     Account / Source
                   </label>
                   <input
                     type="text"
                     value={form.reference}
+                    onFocus={() => setReferenceFocused(true)}
+                    onBlur={() => setTimeout(() => setReferenceFocused(false), 150)}
                     onChange={(e) =>
-                      setForm((prev) => ({ ...prev, reference: e.target.value }))
+                      setForm((prev) => ({
+                        ...prev,
+                        reference: titleCaseEveryWord(e.target.value),
+                      }))
                     }
+                    autoComplete="new-password"
+                    name="khl-finance-reference"
                     className={inputClass()}
                     placeholder={
                       mode === "in"
@@ -694,6 +718,32 @@ export default function FinancePage() {
                         : "Example: Company bank / Barclays loan"
                     }
                   />
+                  {referenceFocused && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-44 overflow-auto rounded-lg border border-neutral-300 bg-white shadow-lg">
+                      {accountSourceOptions
+                        .filter((source) =>
+                          source.toLowerCase().includes(form.reference.toLowerCase())
+                        )
+                        .slice(0, 6)
+                        .map((source) => (
+                          <button
+                            key={source}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setForm((prev) => ({
+                                ...prev,
+                                reference: source,
+                              }));
+                              setReferenceFocused(false);
+                            }}
+                            className="block w-full bg-white px-3 py-2 text-left text-sm text-neutral-900 hover:bg-neutral-100"
+                          >
+                            {source}
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1058,7 +1108,10 @@ export default function FinancePage() {
                     type="text"
                     value={editForm.description}
                     onChange={(e) =>
-                      setEditForm((prev) => ({ ...prev, description: e.target.value }))
+                      setEditForm((prev) => ({
+                        ...prev,
+                        description: titleCaseEveryWord(e.target.value),
+                      }))
                     }
                     className={inputClass()}
                     placeholder="Description"
@@ -1071,9 +1124,13 @@ export default function FinancePage() {
                   </label>
                   <input
                     type="text"
+                    list="finance-account-source-options"
                     value={editForm.reference}
                     onChange={(e) =>
-                      setEditForm((prev) => ({ ...prev, reference: e.target.value }))
+                      setEditForm((prev) => ({
+                        ...prev,
+                        reference: titleCaseEveryWord(e.target.value),
+                      }))
                     }
                     className={inputClass()}
                     placeholder="Account / Source"

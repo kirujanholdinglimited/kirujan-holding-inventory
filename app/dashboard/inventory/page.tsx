@@ -414,30 +414,6 @@ function parseDecimalOrZero(v: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function rowDiscountedUnitCost(row: PurchaseWithProduct | null | undefined) {
-  const originalUnitCost = Number(row?.unit_cost ?? 0);
-  const taxCost = Number(row?.tax_amount ?? 0);
-  const shippingCost = Number(row?.shipping_cost ?? 0);
-  const savedBaseTotal = Number(row?.total_cost ?? 0);
-  const discountType = row?.discount_type ?? null;
-  const discountValue = Number(row?.discount_value ?? 0);
-
-  if (discountType === "percent" && discountValue > 0) {
-    return Math.max(0, originalUnitCost - (originalUnitCost * discountValue) / 100);
-  }
-
-  if (discountType === "fixed" && discountValue > 0) {
-    return Math.max(0, originalUnitCost - discountValue);
-  }
-
-  if (savedBaseTotal > 0) {
-    const inferredUnitCost = Math.max(0, savedBaseTotal - taxCost - shippingCost);
-    if (inferredUnitCost < originalUnitCost) return inferredUnitCost;
-  }
-
-  return originalUnitCost;
-}
-
 function toNullDate(v: string) {
   const t = v.trim();
   return t ? t : null;
@@ -449,7 +425,7 @@ function toNullText(v: string) {
 }
 
 function inferRefundParts(row: PurchaseWithProduct | null | undefined) {
-  const product = rowDiscountedUnitCost(row);
+  const product = Number(row?.unit_cost ?? 0);
   const shipping = Number(row?.shipping_cost ?? 0);
   const tax = Number(row?.tax_amount ?? 0);
   const target = Number(row?.refund_amount ?? 0);
@@ -2263,8 +2239,22 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
     const discountType = row?.discount_type ?? null;
     const discountValue = Number(row?.discount_value ?? 0);
 
-    const discountedUnitCost = rowDiscountedUnitCost(row);
-    const discountAmount = Math.max(0, originalUnitCost - discountedUnitCost);
+    let discountedUnitCost = originalUnitCost;
+    let discountAmount = 0;
+
+    if (discountType === "percent" && discountValue > 0) {
+      discountAmount = (originalUnitCost * discountValue) / 100;
+      discountedUnitCost = Math.max(0, originalUnitCost - discountAmount);
+    } else if (discountType === "fixed" && discountValue > 0) {
+      discountAmount = discountValue;
+      discountedUnitCost = Math.max(0, originalUnitCost - discountAmount);
+    } else if (savedBaseTotal > 0) {
+      const inferredUnitCost = Math.max(0, savedBaseTotal - taxCost - shippingCost);
+      if (inferredUnitCost < originalUnitCost) {
+        discountedUnitCost = inferredUnitCost;
+        discountAmount = originalUnitCost - inferredUnitCost;
+      }
+    }
 
     return {
       originalUnitCost,
@@ -2885,7 +2875,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
     if (!row) return;
 
     const refundAmount =
-      (awaitingRefundIncludeProduct ? getDiscountedCostParts(row).discountedUnitCost : 0) +
+      (awaitingRefundIncludeProduct ? Number(row.unit_cost ?? 0) : 0) +
       (awaitingRefundIncludeShipping ? Number(row.shipping_cost ?? 0) : 0) +
       (awaitingRefundIncludeVat ? Number(row.tax_amount ?? 0) : 0);
 
@@ -4144,7 +4134,7 @@ const writtenOffCostBreakdown = useMemo(() => {
 
   const awaitingRefundTotal = useMemo(() => {
     if (!awaitingRefundTargetRow) return 0;
-    return (awaitingRefundIncludeProduct ? getDiscountedCostParts(awaitingRefundTargetRow).discountedUnitCost : 0) +
+    return (awaitingRefundIncludeProduct ? Number(awaitingRefundTargetRow.unit_cost ?? 0) : 0) +
       (awaitingRefundIncludeShipping ? Number(awaitingRefundTargetRow.shipping_cost ?? 0) : 0) +
       (awaitingRefundIncludeVat ? Number(awaitingRefundTargetRow.tax_amount ?? 0) : 0);
   }, [
@@ -5935,13 +5925,6 @@ async function confirmSold() {
                         onToggle={togglePurchaseSort}
                       />
                       <SortableTh
-                        label="Total"
-                        sortKey="total"
-                        activeKey={purchaseSortKey}
-                        direction={purchaseSortDirection}
-                        onToggle={togglePurchaseSort}
-                      />
-                      <SortableTh
                         label="Refund Amount"
                         sortKey="refund_amount"
                         activeKey={purchaseSortKey}
@@ -6211,10 +6194,9 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.asin ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.brand ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
-                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(rowDiscountedUnitCost(r))}</td>
+                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(Number(r.unit_cost ?? 0))}</td>
                           <td className="py-3 pr-4 font-semibold text-neutral-900">{money(Number(r.shipping_cost ?? 0))}</td>
                           <td className="py-3 pr-4 font-semibold text-neutral-900">{money(Number(r.tax_amount ?? 0))}</td>
-                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(rowDiscountedUnitCost(r) + Number(r.shipping_cost ?? 0) + Number(r.tax_amount ?? 0))}</td>
                           <td className="py-3 pr-4 font-semibold text-neutral-900">{money(Number(r.refund_amount ?? 0))}</td>
                           <td className="py-3 pr-4">{titleCaseEveryWord(String(r.return_reason ?? "-"))}</td>
                         </>
@@ -6493,7 +6475,7 @@ async function confirmSold() {
                       onClick={() => setAwaitingRefundIncludeProduct((v) => !v)}
                     >
                       <div className="font-semibold">Product Cost</div>
-                      <div className="mt-1 text-xs">{money(getDiscountedCostParts(awaitingRefundTargetRow).discountedUnitCost)}</div>
+                      <div className="mt-1 text-xs">{money(Number(awaitingRefundTargetRow.unit_cost ?? 0))}</div>
                     </button>
                     <button
                       type="button"
@@ -8535,10 +8517,10 @@ async function confirmSold() {
                   <div className="rounded-xl border bg-neutral-50 p-4">
                     <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
                     <div className="mt-3 space-y-2 text-sm text-neutral-800">
-                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(rowDiscountedUnitCost(returnedItemDetailRow))}</b></div>
+                      <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0))}</b></div>
                       <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(Number(returnedItemDetailRow.tax_amount ?? 0))}</b></div>
                       <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
-                      <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(rowDiscountedUnitCost(returnedItemDetailRow) + Number(returnedItemDetailRow.tax_amount ?? 0) + Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
+                      <div className="flex items-center justify-between border-t pt-2"><CostBreakdownLabel label="Total Cost Basis" help="Total of all cost breakdown rows after discounts and added fees." /><b>{money(Number(returnedItemDetailRow.unit_cost ?? 0) + Number(returnedItemDetailRow.tax_amount ?? 0) + Number(returnedItemDetailRow.shipping_cost ?? 0))}</b></div>
                     </div>
                   </div>
 
@@ -8546,8 +8528,8 @@ async function confirmSold() {
                     <div className="text-sm font-semibold text-neutral-900">Refund Details</div>
                     <div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-y-2 gap-x-4 text-sm text-neutral-800">
                       <div className="font-semibold">Unit Cost</div>
-                      <div>{money(rowDiscountedUnitCost(returnedItemDetailRow))}</div>
-                      <div className="text-right font-semibold">{money(returnedItemRefundParts.product ? rowDiscountedUnitCost(returnedItemDetailRow) : 0)}</div>
+                      <div>{money(Number(returnedItemDetailRow.unit_cost ?? 0))}</div>
+                      <div className="text-right font-semibold">{money(returnedItemRefundParts.product ? Number(returnedItemDetailRow.unit_cost ?? 0) : 0)}</div>
 
                       <div className="font-semibold">Tax</div>
                       <div>{money(Number(returnedItemDetailRow.tax_amount ?? 0))}</div>
