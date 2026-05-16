@@ -1710,9 +1710,13 @@ function stockValueAtDate(rows: PurchaseDashboardRow[], cutoff: Date) {
     if (!acquired || acquired > cutoff) return sum;
 
     const status = normalizeStatus(row.status);
-    if (status === "sold" || status === "written_off") {
-      const removed = rowSoldOrRemovedDate(row);
-      if (removed && removed <= cutoff) return sum;
+    if (
+      status !== "awaiting_delivery" &&
+      status !== "processing" &&
+      status !== "sent_to_amazon" &&
+      status !== "selling"
+    ) {
+      return sum;
     }
 
     if (rowQty(row) <= 0) return sum;
@@ -1726,9 +1730,13 @@ function stockRowsHeldAtDate(rows: PurchaseDashboardRow[], cutoff: Date) {
     if (!acquired || acquired > cutoff) return false;
 
     const status = normalizeStatus(row.status);
-    if (status === "sold" || status === "written_off") {
-      const removed = rowSoldOrRemovedDate(row);
-      if (removed && removed <= cutoff) return false;
+    if (
+      status !== "awaiting_delivery" &&
+      status !== "processing" &&
+      status !== "sent_to_amazon" &&
+      status !== "selling"
+    ) {
+      return false;
     }
 
     return rowQty(row) > 0;
