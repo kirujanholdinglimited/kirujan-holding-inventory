@@ -4057,7 +4057,7 @@ async function saveWrittenOffDetails() {
       : writtenOffEditOutcome === "return_to_me"
         ? "Outcome: Returned To Me"
         : null;
-  const finalReason = buildWriteOffReasonWithFee(reason, outcomeText, cost);
+  const finalReason = reason;
 
   try {
     setWrittenOffEditBusy(true);
