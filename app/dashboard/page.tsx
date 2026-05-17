@@ -2375,7 +2375,7 @@ export default function DashboardPage() {
     const selectedStockFyBounds = getFyBounds(selectedStockFyLabel);
 
     for (const r of purchaseRows) {
-      const st = normalizeStatus(r?.status);
+      const st = rowWriteOffDate(r) ? "written_off" : normalizeStatus(r?.status);
       if (!(st in agg)) continue;
 
       if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
