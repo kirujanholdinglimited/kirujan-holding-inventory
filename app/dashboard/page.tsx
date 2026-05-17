@@ -2375,11 +2375,19 @@ export default function DashboardPage() {
     const selectedStockFyBounds = getFyBounds(selectedStockFyLabel);
 
     for (const r of purchaseRows) {
+<<<<<<< HEAD
       const st = rowWriteOffDate(r) ? "written_off" : normalizeStatus(r?.status);
       if (!(st in agg)) continue;
 
       if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
       if (st === "written_off" && String((r as any).tax_year ?? "") !== selectedStockFyLabel && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+=======
+      const st = (() => { const rawStatus = normalizeStatus(r?.status).replace(/-/g, "_"); return rawStatus === "written_off" || rawStatus === "write_off" || rawStatus === "writeoff" || rawStatus === "writtenoff" || rawStatus === "damaged" ? "written_off" : rawStatus; })();
+      if (!(st in agg)) continue;
+
+      if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+      if (false && st === "written_off" && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+>>>>>>> dev
 
       const qty = rowQty(r);
       if (qty <= 0) continue;
@@ -3682,7 +3690,7 @@ export default function DashboardPage() {
     stock.home.units +
     stock.outbound.units +
     stock.selling.units +
-    stock.damaged.units;
+    0;
 
   const totalStockValue =
     stock.inbound.value +
