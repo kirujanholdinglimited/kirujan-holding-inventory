@@ -3682,7 +3682,7 @@ export default function DashboardPage() {
     stock.home.units +
     stock.outbound.units +
     stock.selling.units +
-    stock.damaged.units;
+    0;
 
   const totalStockValue =
     stock.inbound.value +
