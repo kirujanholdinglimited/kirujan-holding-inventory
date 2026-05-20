@@ -1160,7 +1160,7 @@ function rowReturnFee(row: Record<string, any>): number {
 
 function rowReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.returned_date ??
+    row.returned_date ?? row.last_return_date ??
       row.return_date ??
       row.refunded_date ??
       row.refund_date ??
@@ -2379,7 +2379,7 @@ export default function DashboardPage() {
       if (!(st in agg)) continue;
 
       if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
-      if (st === "written_off" && String((r as any).tax_year ?? "") !== selectedStockFyLabel && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+      if (st === "written_off" && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
 
       const qty = rowQty(r);
       if (qty <= 0) continue;
@@ -3682,7 +3682,7 @@ export default function DashboardPage() {
     stock.home.units +
     stock.outbound.units +
     stock.selling.units +
-    0;
+    stock.damaged.units;
 
   const totalStockValue =
     stock.inbound.value +
