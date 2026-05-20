@@ -1106,6 +1106,9 @@ function toNumber(x: unknown): number {
 }
 
 function rowWriteOffFee(row: Record<string, any>): number {
+  const storedWriteOffFee = toNumber(row.write_off_fee);
+  if (storedWriteOffFee > 0) return storedWriteOffFee;
+
   const raw = String(row.write_off_reason ?? "");
   const matches = Array.from(
     raw.matchAll(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/gi)
@@ -1160,7 +1163,7 @@ function rowReturnFee(row: Record<string, any>): number {
 
 function rowReturnFeeDate(row: Record<string, any>): Date | null {
   return parseDate(
-    row.returned_date ?? row.last_return_date ??
+    row.returned_date ??
       row.return_date ??
       row.refunded_date ??
       row.refund_date ??
@@ -2375,11 +2378,11 @@ export default function DashboardPage() {
     const selectedStockFyBounds = getFyBounds(selectedStockFyLabel);
 
     for (const r of purchaseRows) {
-      const st = normalizeStatus(r?.status);
+      const st = rowWriteOffDate(r) ? "written_off" : normalizeStatus(r?.status);
       if (!(st in agg)) continue;
 
       if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
-      if (st === "written_off" && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+      if (st === "written_off" && String((r as any).tax_year ?? "") !== selectedStockFyLabel && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
 
       const qty = rowQty(r);
       if (qty <= 0) continue;
