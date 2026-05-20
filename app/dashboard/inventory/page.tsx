@@ -72,6 +72,8 @@ type PurchaseRow = {
 
   write_off_reason: WriteOffReason | null;
   write_off_date: string | null;
+  write_off_fee: number | null;
+  last_write_off_cost: number | null;
   return_reason: string | null;
   returned_date: string | null;
   refunded_date: string | null;
@@ -392,10 +394,19 @@ function buildWriteOffReasonWithFee(
   const parts = [
     cleanReason,
     outcomeText,
-    fee > 0 ? `Write Off Fee: ${fee.toFixed(2)}` : null,
-    lastCost > 0 ? `Last Write Off Cost: ${lastCost.toFixed(2)}` : null,
   ].filter(Boolean) as string[];
   return parts.join(" • ");
+}
+
+function getWriteOffFee(row: PurchaseWithProduct | null | undefined) {
+  const stored = Number(row?.write_off_fee ?? 0);
+  return Number.isFinite(stored) ? stored : 0;
+}
+
+function getLastWriteOffCost(row: PurchaseWithProduct | null | undefined) {
+  const stored = Number(row?.last_write_off_cost ?? 0);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+  return parseLastWriteOffCost(row?.write_off_reason ?? null);
 }
 
 function sanitizeDecimalInput(v: string) {
@@ -1964,6 +1975,8 @@ function InventoryPageContent() {
               status,
               write_off_reason,
               write_off_date,
+              write_off_fee,
+              last_write_off_cost,
               return_reason,
               returned_date,
               refunded_date,
@@ -2021,6 +2034,8 @@ function InventoryPageContent() {
           status,
           write_off_reason,
           write_off_date,
+          write_off_fee,
+          last_write_off_cost,
           return_reason,
           returned_date,
           refunded_date,
@@ -2223,7 +2238,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
     const returnShippingFee = Number(row?.return_shipping_fee ?? 0);
     const fbmShippingFee = Number(row?.fbm_shipping_fee ?? 0);
-    const writeOffFee = parseWriteOffFee(row?.write_off_reason ?? null);
+    const writeOffFee = getWriteOffFee(row);
 
     return {
       baseTotal,
@@ -3842,7 +3857,7 @@ const safeTracking = boxTrackingNo.trim() || "";
       return;
     }
 
-    const previousWriteOffFee = parseWriteOffFee(row?.write_off_reason ?? null);
+    const previousWriteOffFee = getWriteOffFee(row);
     const nextWriteOffFee = previousWriteOffFee + extraCost;
 
     const outcomeText =
@@ -3860,6 +3875,8 @@ const safeTracking = boxTrackingNo.trim() || "";
         status: "written_off",
         write_off_reason: finalReason,
         write_off_date: effectiveWriteOffDate,
+        write_off_fee: nextWriteOffFee,
+        last_write_off_cost: extraCost,
         tax_year: computeUkTaxYear(effectiveWriteOffDate),
       })
       .eq("id", selectedPurchaseId);
@@ -3905,6 +3922,8 @@ const safeTracking = boxTrackingNo.trim() || "";
         status: nextRestoreStatus,
         write_off_reason: restoreRow?.write_off_reason ?? null,
         write_off_date: restoreRow?.write_off_date ?? null,
+        write_off_fee: restoreRow?.write_off_fee ?? 0,
+        last_write_off_cost: restoreRow?.last_write_off_cost ?? 0,
         return_reason: clearReturnFields ? null : restoreRow?.return_reason ?? null,
         returned_date: clearReturnFields ? null : restoreRow?.returned_date ?? null,
         refunded_date: clearReturnFields ? null : restoreRow?.refunded_date ?? null,
@@ -3999,7 +4018,7 @@ useEffect(() => {
   setWrittenOffEditMode(false);
   setWrittenOffEditReason(parsed.reason === "-" ? "" : parsed.reason);
   setWrittenOffEditOutcome(normalizedOutcome as "none" | "dispose" | "return_to_me");
-  setWrittenOffEditCostStr(String(parseLastWriteOffCost(writtenOffDetailRow.write_off_reason ?? null)));
+  setWrittenOffEditCostStr(String(getLastWriteOffCost(writtenOffDetailRow)));
   setWrittenOffEditDate(writtenOffDetailRow.write_off_date ?? todayISO());
 }, [writtenOffDetailOpen, writtenOffDetailRow]);
 
@@ -4050,6 +4069,9 @@ async function saveWrittenOffDetails() {
   }
 
   const cost = parseDecimalOrZero(writtenOffEditCostStr);
+  const currentTotalWriteOffFee = getWriteOffFee(writtenOffDetailRow);
+  const currentLastWriteOffCost = getLastWriteOffCost(writtenOffDetailRow);
+  const nextWriteOffFee = Math.max(0, currentTotalWriteOffFee - currentLastWriteOffCost + cost);
   const effectiveWriteOffDate = writtenOffEditDate?.trim() ? writtenOffEditDate : todayISO();
   const outcomeText =
     writtenOffEditOutcome === "dispose"
@@ -4057,7 +4079,7 @@ async function saveWrittenOffDetails() {
       : writtenOffEditOutcome === "return_to_me"
         ? "Outcome: Returned To Me"
         : null;
-  const finalReason = reason;
+  const finalReason = buildWriteOffReasonWithFee(reason, outcomeText, nextWriteOffFee, cost);
 
   try {
     setWrittenOffEditBusy(true);
@@ -4066,8 +4088,9 @@ async function saveWrittenOffDetails() {
       .update({
         write_off_reason: finalReason,
         write_off_date: effectiveWriteOffDate,
+        write_off_fee: nextWriteOffFee,
+        last_write_off_cost: cost,
         tax_year: computeUkTaxYear(effectiveWriteOffDate),
-        misc_fees: writtenOffDetailRow.misc_fees ?? null,
       })
       .eq("id", writtenOffDetailRow.id);
 
@@ -4086,7 +4109,7 @@ const writtenOffCostBreakdown = useMemo(() => {
   const productCost = Number(writtenOffDetailRow?.unit_cost ?? 0);
   const taxCost = Number(writtenOffDetailRow?.tax_amount ?? 0);
   const shippingCost = Number(writtenOffDetailRow?.shipping_cost ?? 0);
-  const writtenOffCost = parseWriteOffFee(writtenOffDetailRow?.write_off_reason ?? null);
+  const writtenOffCost = getWriteOffFee(writtenOffDetailRow);
   const miscCost = Number(writtenOffDetailRow?.misc_fees ?? 0);
   const returnShippingCost = Number(writtenOffDetailRow?.return_shipping_fee ?? 0);
   const fbmShippingCost = Number(writtenOffDetailRow?.fbm_shipping_fee ?? 0);
@@ -4179,7 +4202,7 @@ const writtenOffCostBreakdown = useMemo(() => {
     const taxCost = discountedParts.taxCost;
     const shippingCost = discountedParts.shippingCost;
     const miscCost = Number(soldTargetRow?.misc_fees ?? 0);
-    const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
+    const writeOffFee = getWriteOffFee(soldTargetRow);
     const returnShippingCost = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShippingFee = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
     const amazonFees = soldTargetRow?.sale_type === "FBM" && Boolean(soldTargetRow?.last_return_date)
@@ -4240,7 +4263,7 @@ const writtenOffCostBreakdown = useMemo(() => {
     const shippingCost = discountedParts.shippingCost;
     const amazonInbound = soldCostBreakdown.amazonInboundPerItem;
     const existingMisc = Number(soldTargetRow?.misc_fees ?? 0);
-    const writeOffFee = parseWriteOffFee(soldTargetRow?.write_off_reason ?? null);
+    const writeOffFee = getWriteOffFee(soldTargetRow);
     const existingReturnShip = Number(soldTargetRow?.return_shipping_fee ?? 0);
     const existingFbmShip = Number(soldTargetRow?.fbm_shipping_fee ?? 0);
     const previewMiscFees = soldTargetRow?.status === "sold" ? enteredMiscFees : existingMisc + enteredMiscFees;
@@ -4731,7 +4754,7 @@ async function confirmSold() {
     const amazonFees = selectedPurchase?.sale_type === "FBM" && (selectedPurchase?.status === "awaiting_refund" || selectedPurchase?.status === "refunded" || Boolean(selectedPurchase?.last_return_date))
       ? 0
       : Number(selectedPurchase?.amazon_fees ?? 0);
-    const writeOffFee = parseWriteOffFee(selectedPurchase?.write_off_reason ?? null);
+    const writeOffFee = getWriteOffFee(selectedPurchase);
     const returnFees = Number(selectedPurchase?.return_shipping_fee ?? 0);
     const fbmShipping = Number(selectedPurchase?.fbm_shipping_fee ?? 0);
 
@@ -4804,6 +4827,10 @@ async function confirmSold() {
             nextStatus == "written_off" ? selectedPurchase.write_off_reason : null,
           write_off_date:
             nextStatus == "written_off" ? selectedPurchase.write_off_date : null,
+          write_off_fee:
+            nextStatus == "written_off" ? selectedPurchase.write_off_fee ?? 0 : 0,
+          last_write_off_cost:
+            nextStatus == "written_off" ? selectedPurchase.last_write_off_cost ?? 0 : 0,
           return_reason:
             nextStatus === "awaiting_refund" || nextStatus === "refunded"
               ? selectedPurchase.return_reason
@@ -6234,7 +6261,7 @@ async function confirmSold() {
                               Number(r.return_shipping_fee ?? 0) +
                               Number(r.fbm_shipping_fee ?? 0) +
                               Number(r.misc_fees ?? 0) +
-                              parseWriteOffFee(r.write_off_reason ?? null)
+                              getWriteOffFee(r)
                             )}
                           </td>
                           <td className="py-3 pr-4">
@@ -6247,7 +6274,7 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.asin ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.brand ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
-                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? Number(r.unit_cost ?? 0) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + parseWriteOffFee(r.write_off_reason ?? null) : totals.soldTotal)}</td>
+                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? Number(r.unit_cost ?? 0) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + getWriteOffFee(r) : totals.soldTotal)}</td>
                           <td className="py-3 pr-4">{r.sale_type ?? "-"}</td>
                           <td className="py-3 pr-4">
                             {r.sold_amount == null ? "-" : money(Number(r.sold_amount))}
@@ -6829,7 +6856,7 @@ async function confirmSold() {
                     value={
                       writtenOffEditMode
                         ? writtenOffEditCostStr
-                        : parseLastWriteOffCost(writtenOffDetailRow?.write_off_reason ?? null).toFixed(2)
+                        : getLastWriteOffCost(writtenOffDetailRow).toFixed(2)
                     }
                     onChange={(e) => setWrittenOffEditCostStr(sanitizeDecimalInput(e.target.value))}
                     readOnly={!writtenOffEditMode}
