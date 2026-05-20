@@ -1106,14 +1106,12 @@ function toNumber(x: unknown): number {
 }
 
 function rowWriteOffFee(row: Record<string, any>): number {
-  const n = toNumber(row.write_off_fee);
-
-
-
-
-
-
-  return Number.isFinite(n) ? n : 0;
+  const fieldValue = toNumber(row.write_off_fee);
+  if (fieldValue > 0) return moneyValue(fieldValue);
+  const raw = String(row.write_off_reason ?? "");
+  const match = raw.match(/write\s*off\s*fee\s*:\s*£?\s*([0-9]+(?:\.[0-9]+)?)/i);
+  const parsedValue = match ? Number(match[1]) : 0;
+  return Number.isFinite(parsedValue) ? moneyValue(parsedValue) : 0;
 }
 function rowCustomerReturnFee(row: Record<string, any>): number {
   return moneyValue(
@@ -2375,12 +2373,10 @@ export default function DashboardPage() {
     const selectedStockFyBounds = getFyBounds(selectedStockFyLabel);
 
     for (const r of purchaseRows) {
-      const rawStatus = String(r?.status ?? "").trim().toLowerCase();
-      const st = rawStatus.replace(/\s+/g, "_");
+      const st = normalizeStatus(r?.status);
       if (!(st in agg)) continue;
 
       if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
-      if (st === "written_off" && rawStatus !== "written_off") continue;
       if (st === "written_off" && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
 
       const qty = rowQty(r);
@@ -2472,8 +2468,8 @@ export default function DashboardPage() {
     () =>
       purchaseRows.filter(
         (row) =>
-          rowReturnFee(row) > 0 &&
-          inDateRange(rowReturnFeeDate(row), rangeBounds.start, rangeBounds.end)
+          rowCustomerReturnFee(row) > 0 &&
+          inDateRange(rowCustomerReturnFeeDate(row), rangeBounds.start, rangeBounds.end)
       ),
     [purchaseRows, rangeBounds]
   );
@@ -2559,7 +2555,7 @@ export default function DashboardPage() {
         .reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
     const shippingTotal = activeShipmentRows.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0);
     const shippingTaxTotal = activeShipmentRows.reduce((sum, row) => sum + shipmentTaxTotal(row), 0);
-    const customerReturnFeeTotal = activeReturnFeeRows.reduce((sum, row) => sum + rowReturnFee(row), 0);
+    const customerReturnFeeTotal = activeReturnFeeRows.reduce((sum, row) => sum + rowCustomerReturnFee(row), 0);
     const fbmShippingFeeTotal = activeFbmShippingFeeRows.reduce((sum, row) => sum + rowFbmShippingFee(row), 0);
     const writeOffTotal = activeWriteOffFeeRows.reduce((sum, row) => sum + rowWriteOffFee(row), 0);
     const supplierRefundLossTotal = activeSupplierRefundRows.reduce((sum, row) => sum + rowSupplierRefundLoss(row), 0);
@@ -2631,7 +2627,7 @@ export default function DashboardPage() {
         .reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
     const shippingRunningCost = activeShipmentRows.reduce((sum, row) => sum + shipmentBaseShippingTotal(row), 0);
     const shippingTaxRunningCost = activeShipmentRows.reduce((sum, row) => sum + shipmentTaxTotal(row), 0);
-    const customerReturnFee = activeReturnFeeRows.reduce((sum, row) => sum + rowReturnFee(row), 0);
+    const customerReturnFee = activeReturnFeeRows.reduce((sum, row) => sum + rowCustomerReturnFee(row), 0);
     const fbmShippingFee = activeFbmShippingFeeRows.reduce((sum, row) => sum + rowFbmShippingFee(row), 0);
     const writeOffCost = activeWriteOffFeeRows.reduce((sum, row) => sum + rowWriteOffFee(row), 0);
     const loanInterestCost = activeFinanceRows
@@ -2842,7 +2838,7 @@ export default function DashboardPage() {
             toNumber(row.refund_amount) +
             toNumber(row.refunded_amount),
           0
-        ) + returnFeeRows.reduce((sum, row) => sum + rowReturnFee(row), 0)
+        ) + returnFeeRowsForMonth.reduce((sum, row) => sum + rowCustomerReturnFee(row), 0)
       );
       const writeOff = moneyValue(writeOffRows.reduce((sum, row) => sum + rowWriteOffFee(row), 0));
       const miscPurchaseRowsForMonth = purchaseRowsForMonth.filter((row) => normalizeStatus(row.status) !== "sold");
@@ -3683,7 +3679,8 @@ export default function DashboardPage() {
     stock.inbound.units +
     stock.home.units +
     stock.outbound.units +
-    stock.selling.units;
+    stock.selling.units +
+    stock.damaged.units;
 
   const totalStockValue =
     stock.inbound.value +
@@ -4434,7 +4431,9 @@ const exportSystemKpiHistoryPdf = () => {
           .reduce((sum, row) => sum + rowFbmShippingFee(row), 0)
       );
       const writeOffCost = moneyValue(
-        writtenOffRows.reduce((sum, row) => sum + rowValueAtCost(row), 0)
+        purchaseRows
+          .filter((row) => rowWriteOffFee(row) > 0 && inDateRange(parseDate(row.write_off_date ?? row.written_off_date ?? row.removed_date ?? row.updated_at ?? row.created_at), bounds.start, bounds.end))
+          .reduce((sum, row) => sum + rowWriteOffFee(row), 0)
       );
       const otherOperatingCost = moneyValue(
         expenseRowsForYear
