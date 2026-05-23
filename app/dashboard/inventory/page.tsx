@@ -6730,7 +6730,8 @@ async function confirmSold() {
           <div className="rounded-2xl border p-4">
             <div className="mb-3 text-sm font-semibold text-neutral-900">Product Details</div>
             <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[140px_1fr]">
-              <div className="font-semibold">Item ID:</div><div>{writtenOffDetailRow?.product?.product_code ?? "-"}</div>
+              <div className="font-semibold">Product ID:</div><div>{writtenOffDetailRow?.product?.product_code ?? "-"}</div>
+              <div className="font-semibold">Item ID:</div><div>{writtenOffDetailRow?.item_no ?? "-"}</div>
               <div className="font-semibold">ASIN:</div><div>{writtenOffDetailRow?.product?.asin ?? "-"}</div>
               <div className="font-semibold">Brand:</div><div>{writtenOffDetailRow?.product?.brand ?? "-"}</div>
               <div className="font-semibold">Product:</div><div>{writtenOffDetailRow?.product?.product_name ?? "-"}</div>
@@ -7731,6 +7732,7 @@ async function confirmSold() {
                   <div className="mb-3 text-sm font-semibold text-neutral-900">Product Details</div>
                   <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[140px_1fr]">
                     <div className="font-semibold">Order Number:</div><div>{soldTargetRow?.order_no ?? "-"}</div>
+                    <div className="font-semibold">Product ID:</div><div>{soldTargetRow?.product?.product_code ?? "-"}</div>
                     <div className="font-semibold">Item ID:</div><div>{soldTargetRow?.item_no ?? "-"}</div>
                     <div className="font-semibold">ASIN:</div><div>{soldTargetRow?.product?.asin ?? "-"}</div>
                     <div className="font-semibold">Brand:</div><div>{soldTargetRow?.product?.brand ?? "-"}</div>
@@ -8637,7 +8639,8 @@ async function confirmSold() {
                     <div className="rounded-2xl border p-4">
                       <div className="mb-3 text-sm font-semibold text-neutral-900">Product Details</div>
                       <div className="grid gap-y-2 text-sm text-neutral-800 sm:grid-cols-[140px_1fr]">
-                        <div className="font-semibold">Item ID:</div><div>{selectedPurchase.product?.product_code ?? "-"}</div>
+                        <div className="font-semibold">Product ID:</div><div>{selectedPurchase.product?.product_code ?? "-"}</div>
+                        <div className="font-semibold">Item ID:</div><div>{selectedPurchase.item_no ?? "-"}</div>
                         <div className="font-semibold">ASIN:</div><div>{selectedPurchase.product?.asin ?? "-"}</div>
                         <div className="font-semibold">Brand:</div><div>{selectedPurchase.product?.brand ?? "-"}</div>
                         <div className="font-semibold">Product:</div><div>{selectedPurchase.product?.product_name ?? "-"}</div>
