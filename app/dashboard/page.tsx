@@ -4362,6 +4362,12 @@ const exportSystemKpiHistoryPdf = () => {
         inDateRange(parseDate(row.purchase_date ?? row.created_at), bounds.start, bounds.end)
       );
 
+      const supplierRefundRowsForYear = purchaseRows.filter(
+        (row) =>
+          isConfirmedSupplierRefund(row) &&
+          inDateRange(rowSupplierRefundDate(row), bounds.start, bounds.end)
+      );
+
       const soldRows = purchaseRows.filter(
         (row) =>
           normalizeStatus(row.status) === "sold" &&
@@ -4401,8 +4407,17 @@ const exportSystemKpiHistoryPdf = () => {
       );
 
       const sales = moneyValue(soldRows.reduce((sum, row) => sum + rowTurnover(row), 0));
+      const supplierRefundOriginalCostTotal = supplierRefundRowsForYear.reduce(
+        (sum, row) => sum + rowSupplierRefundOriginalCost(row),
+        0
+      );
+      const supplierRefundLossTotal = supplierRefundRowsForYear.reduce(
+        (sum, row) => sum + rowSupplierRefundLoss(row),
+        0
+      );
       const cogs = moneyValue(
-        purchaseRowsForYear.reduce((sum, row) => sum + rowValueAtCost(row), 0)
+        purchaseRowsForYear.reduce((sum, row) => sum + rowValueAtCost(row), 0) -
+          supplierRefundOriginalCostTotal
       );
 
       const fixedAssets = moneyValue(
@@ -4422,8 +4437,8 @@ const exportSystemKpiHistoryPdf = () => {
       const shippingTaxRunningCost = moneyValue(shipmentRowsForYear.reduce((sum, row) => sum + shipmentTaxTotal(row), 0));
       const customerReturnFee = moneyValue(
         purchaseRows
-          .filter((row) => rowReturnFee(row) > 0 && inDateRange(rowReturnFeeDate(row), bounds.start, bounds.end))
-          .reduce((sum, row) => sum + rowReturnFee(row), 0)
+          .filter((row) => rowCustomerReturnFee(row) > 0 && inDateRange(rowCustomerReturnFeeDate(row), bounds.start, bounds.end))
+          .reduce((sum, row) => sum + rowCustomerReturnFee(row), 0)
       );
       const fbmShippingFee = moneyValue(
         purchaseRows
@@ -4455,7 +4470,8 @@ const exportSystemKpiHistoryPdf = () => {
         fbmShippingFee +
         writeOffCost +
         loanInterestCost +
-        otherOperatingCost
+        otherOperatingCost +
+        supplierRefundLossTotal
       );
 
       const financeIn = moneyValue(
