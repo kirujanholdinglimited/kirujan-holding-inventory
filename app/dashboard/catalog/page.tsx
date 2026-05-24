@@ -142,6 +142,18 @@ export default function CatalogPage() {
   const [openCreate, setOpenCreate] = useState(false);
   const [createAsin, setCreateAsin] = useState("");
   const [createBrand, setCreateBrand] = useState("");
+  const filteredBrandSuggestions = Array.from(
+    new Set(
+      rows
+        .map((r) => (r.brand || "").trim())
+        .filter(
+          (b) =>
+            b &&
+            createBrand.trim() &&
+            b.toLowerCase().includes(createBrand.toLowerCase())
+        )
+    )
+  ).slice(0, 8);
   const [createName, setCreateName] = useState("");
   const [createBarcode, setCreateBarcode] = useState("");
   const [createAmazonBarcode, setCreateAmazonBarcode] = useState("");
@@ -485,7 +497,7 @@ export default function CatalogPage() {
               />
             </div>
 
-            <div>
+            <div className="relative">
               <label className="text-xs text-neutral-600">Brand</label>
               <input
                 value={createBrand}
@@ -493,6 +505,21 @@ export default function CatalogPage() {
                 className="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
                 placeholder="e.g. Lego Star Wars"
               />
+
+              {filteredBrandSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-xl border bg-white shadow-lg">
+                  {filteredBrandSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => setCreateBrand(suggestion)}
+                      className="block w-full bg-white px-3 py-2 text-left text-sm hover:bg-neutral-100"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="sm:col-span-3">
