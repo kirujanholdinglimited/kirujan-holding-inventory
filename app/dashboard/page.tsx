@@ -3675,12 +3675,12 @@ export default function DashboardPage() {
       : 0;
   const currentUnitsSold = currentMonthSoldRows.reduce((sum, row) => sum + Math.max(1, rowQty(row)), 0);
 
-  const totalUnitsInStock =
-    stock.inbound.units +
-    stock.home.units +
-    stock.outbound.units +
-    stock.selling.units +
-    stock.damaged.units;
+  const totalUnitsInStock = purchaseRows.reduce((sum, row) => {
+    const status = normalizeStatus(row.status);
+    return ["awaiting_delivery", "processing", "sent_to_amazon", "selling"].includes(status)
+      ? sum + Math.max(1, rowQty(row))
+      : sum;
+  }, 0);
 
   const totalStockValue =
     stock.inbound.value +
@@ -6100,7 +6100,7 @@ const exportSystemKpiHistoryPdf = () => {
                   href={buildInventoryHref("sold", range)}
                 />
                 <BigStat title="Total Stock Value" value={money(totalStockValue)} sub="At cost" />
-                <BigStat title="Total Units In Stock" value={`${totalUnitsInStock}`} sub="Excludes Sold" />
+                <BigStat title="Total Units In Stock" value={`${stock.inbound.units + stock.home.units + stock.outbound.units + stock.selling.units}`} sub="Excludes Sold" />
               </div>
 
               <div className="rounded-2xl border bg-neutral-50 p-5">
