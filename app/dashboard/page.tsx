@@ -4448,8 +4448,8 @@ const exportSystemKpiHistoryPdf = () => {
       const shippingTaxRunningCost = moneyValue(shipmentRowsForYear.reduce((sum, row) => sum + shipmentTaxTotal(row), 0));
       const customerReturnFee = moneyValue(
         purchaseRows
-          .filter((row) => rowReturnFee(row) > 0 && inDateRange(rowReturnFeeDate(row), bounds.start, bounds.end))
-          .reduce((sum, row) => sum + rowReturnFee(row), 0)
+          .filter((row) => rowCustomerReturnFee(row) > 0 && inDateRange(rowCustomerReturnFeeDate(row), bounds.start, bounds.end))
+          .reduce((sum, row) => sum + rowCustomerReturnFee(row), 0)
       );
       const fbmShippingFee = moneyValue(
         purchaseRows
