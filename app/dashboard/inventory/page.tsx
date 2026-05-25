@@ -2244,7 +2244,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
   const getPurchaseTotals = (row: PurchaseWithProduct | null | undefined) => {
     const baseTotal = Number(row?.total_cost ?? 0);
     const miscFees = Number(row?.misc_fees ?? 0);
-    const amazonFees = Boolean(row?.last_return_date)
+    const amazonFees = Boolean(row?.last_return_date) && row?.status !== "sold"
       ? 0
       : Number(row?.amazon_fees ?? 0);
     const amazonInboundPerItem = getAmazonInboundPerItem(row);
