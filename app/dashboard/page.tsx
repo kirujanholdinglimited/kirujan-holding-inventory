@@ -6126,7 +6126,7 @@ const exportSystemKpiHistoryPdf = () => {
                   href={buildInventoryHref("sold", range)}
                 />
                 <BigStat title="Total Stock Value" value={money(totalStockValue)} sub="At cost" />
-                <BigStat title="Total Units In Stock" value={`${totalUnitsInStock}`} sub="Excludes Sold" />
+                <BigStat title="Total Units In Stock" value={`${stock.inbound.units + stock.home.units + stock.outbound.units + stock.selling.units}`} sub="Excludes Sold" />
               </div>
 
               <div className="rounded-2xl border bg-neutral-50 p-5">
