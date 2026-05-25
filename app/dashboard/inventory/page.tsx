@@ -1309,6 +1309,18 @@ function InventoryPageContent() {
 
   const [catAsin, setCatAsin] = useState("");
   const [catBrand, setCatBrand] = useState("");
+  const filteredCatalogBrandSuggestions = Array.from(
+    new Set(
+      products
+        .map((p) => (p.brand || "").trim())
+        .filter(
+          (b) =>
+            b &&
+            catBrand.trim() &&
+            b.toLowerCase().includes(catBrand.toLowerCase())
+        )
+    )
+  ).slice(0, 8);
   const [catName, setCatName] = useState("");
   const [catBarcode, setCatBarcode] = useState("");
   const [catAmazonBarcode, setCatAmazonBarcode] = useState("");
@@ -9163,7 +9175,7 @@ async function confirmSold() {
                     />
                   </div>
 
-                  <div>
+                  <div className="relative">
                     <div className={fieldLabel()}>Brand *</div>
                     <input
                       className={inputClass()}
@@ -9171,6 +9183,21 @@ async function confirmSold() {
                       onChange={(e) => setCatBrand(titleCaseEveryWord(e.target.value))}
                       placeholder="e.g. Lego"
                     />
+
+                    {filteredCatalogBrandSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 z-50 mt-1 overflow-hidden rounded-xl border bg-white shadow-lg">
+                        {filteredCatalogBrandSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => setCatBrand(suggestion)}
+                            className="block w-full bg-white px-3 py-2 text-left text-sm hover:bg-neutral-100"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="sm:col-span-2">

@@ -1741,6 +1741,32 @@ function stockRowsHeldAtDate(rows: PurchaseDashboardRow[], cutoff: Date) {
   });
 }
 
+function openingStockRowsHeldAtDate(rows: PurchaseDashboardRow[], cutoff: Date) {
+  return rows.filter((row) => {
+    const acquired = rowCreatedOrPurchaseDate(row);
+    if (!acquired || acquired > cutoff) return false;
+
+    const removed = parseDate(
+      row.order_date ??
+        row.sold_date ??
+        row.sale_date ??
+        row.write_off_date ??
+        row.written_off_date ??
+        row.removed_date ??
+        row.refunded_date ??
+        row.returned_date
+    );
+
+    if (removed && removed <= cutoff) return false;
+
+    return rowQty(row) > 0;
+  });
+}
+
+function openingStockValueAtDate(rows: PurchaseDashboardRow[], cutoff: Date) {
+  return openingStockRowsHeldAtDate(rows, cutoff).reduce((sum, row) => sum + rowValueAtCost(row), 0);
+}
+
 
 function usePersistentState<T>(key: string, defaultValue: T) {
   const [value, setValue] = useState<T>(defaultValue);
@@ -3019,7 +3045,7 @@ export default function DashboardPage() {
   );
 
   const openingStock = useMemo(
-    () => stockValueAtDate(purchaseRows, prevFyBounds.end),
+    () => openingStockValueAtDate(purchaseRows, prevFyBounds.end),
     [prevFyBounds.end, purchaseRows]
   );
   const turnover = useMemo(
@@ -3244,7 +3270,7 @@ export default function DashboardPage() {
   }, [purchaseRows]);
 
   const openingStockRows = useMemo(
-    () => stockRowsHeldAtDate(purchaseRows, prevFyBounds.end),
+    () => openingStockRowsHeldAtDate(purchaseRows, prevFyBounds.end),
     [purchaseRows, prevFyBounds.end]
   );
 
@@ -3675,12 +3701,12 @@ export default function DashboardPage() {
       : 0;
   const currentUnitsSold = currentMonthSoldRows.reduce((sum, row) => sum + Math.max(1, rowQty(row)), 0);
 
-  const totalUnitsInStock = purchaseRows.reduce((sum, row) => {
-    const status = normalizeStatus(row.status);
-    return ["awaiting_delivery", "processing", "sent_to_amazon", "selling"].includes(status)
-      ? sum + Math.max(1, rowQty(row))
-      : sum;
-  }, 0);
+  const totalUnitsInStock =
+    stock.inbound.units +
+    stock.home.units +
+    stock.outbound.units +
+    stock.selling.units +
+    stock.damaged.units;
 
   const totalStockValue =
     stock.inbound.value +
@@ -4362,12 +4388,6 @@ const exportSystemKpiHistoryPdf = () => {
         inDateRange(parseDate(row.purchase_date ?? row.created_at), bounds.start, bounds.end)
       );
 
-      const supplierRefundRowsForYear = purchaseRows.filter(
-        (row) =>
-          isConfirmedSupplierRefund(row) &&
-          inDateRange(rowSupplierRefundDate(row), bounds.start, bounds.end)
-      );
-
       const soldRows = purchaseRows.filter(
         (row) =>
           normalizeStatus(row.status) === "sold" &&
@@ -4407,17 +4427,8 @@ const exportSystemKpiHistoryPdf = () => {
       );
 
       const sales = moneyValue(soldRows.reduce((sum, row) => sum + rowTurnover(row), 0));
-      const supplierRefundOriginalCostTotal = supplierRefundRowsForYear.reduce(
-        (sum, row) => sum + rowSupplierRefundOriginalCost(row),
-        0
-      );
-      const supplierRefundLossTotal = supplierRefundRowsForYear.reduce(
-        (sum, row) => sum + rowSupplierRefundLoss(row),
-        0
-      );
       const cogs = moneyValue(
-        purchaseRowsForYear.reduce((sum, row) => sum + rowValueAtCost(row), 0) -
-          supplierRefundOriginalCostTotal
+        purchaseRowsForYear.reduce((sum, row) => sum + rowValueAtCost(row), 0)
       );
 
       const fixedAssets = moneyValue(
@@ -4437,8 +4448,8 @@ const exportSystemKpiHistoryPdf = () => {
       const shippingTaxRunningCost = moneyValue(shipmentRowsForYear.reduce((sum, row) => sum + shipmentTaxTotal(row), 0));
       const customerReturnFee = moneyValue(
         purchaseRows
-          .filter((row) => rowCustomerReturnFee(row) > 0 && inDateRange(rowCustomerReturnFeeDate(row), bounds.start, bounds.end))
-          .reduce((sum, row) => sum + rowCustomerReturnFee(row), 0)
+          .filter((row) => rowReturnFee(row) > 0 && inDateRange(rowReturnFeeDate(row), bounds.start, bounds.end))
+          .reduce((sum, row) => sum + rowReturnFee(row), 0)
       );
       const fbmShippingFee = moneyValue(
         purchaseRows
@@ -4470,8 +4481,7 @@ const exportSystemKpiHistoryPdf = () => {
         fbmShippingFee +
         writeOffCost +
         loanInterestCost +
-        otherOperatingCost +
-        supplierRefundLossTotal
+        otherOperatingCost
       );
 
       const financeIn = moneyValue(
@@ -6116,7 +6126,7 @@ const exportSystemKpiHistoryPdf = () => {
                   href={buildInventoryHref("sold", range)}
                 />
                 <BigStat title="Total Stock Value" value={money(totalStockValue)} sub="At cost" />
-                <BigStat title="Total Units In Stock" value={`${stock.inbound.units + stock.home.units + stock.outbound.units + stock.selling.units}`} sub="Excludes Sold" />
+                <BigStat title="Total Units In Stock" value={`${totalUnitsInStock}`} sub="Excludes Sold" />
               </div>
 
               <div className="rounded-2xl border bg-neutral-50 p-5">
