@@ -1807,7 +1807,7 @@ function InventoryPageContent() {
 
     if (Number.isFinite(numeric)) {
       const { data, error } = await q
-        .or(`product_code.eq.${numeric},barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
+        .or(`product_code.eq.${numeric},product_name.ilike.%${text}%,barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
         .limit(5);
       if (!error) setProducts((data ?? []) as ProductRow[]);
       return;
@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .eq("product_code", numeric);
+            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -1925,7 +1925,7 @@ function InventoryPageContent() {
             .from("products")
             .select("id")
             .or(
-              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%`
+              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`
             );
 
           if (prodErr) throw prodErr;
@@ -2102,7 +2102,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
 
         const rowDate =
           status === "written_off"
-            ? (r.write_off_date ?? r.created_at)
+            ? (r.write_off_date ?? r.written_off_date ?? r.updated_at ?? r.created_at)
             : getRowDateForRangeRaw(r);
 
         return inSelectedTaxYear(rowDate, selectedTaxYear) && inSelectedRange(rowDate, range, selectedTaxYear);
