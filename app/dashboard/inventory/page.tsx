@@ -1807,7 +1807,7 @@ function InventoryPageContent() {
 
     if (Number.isFinite(numeric)) {
       const { data, error } = await q
-        .or(`product_code.eq.${numeric},product_name.ilike.%${text}%,barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
+        .or(`product_code.eq.${numeric},barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
         .limit(5);
       if (!error) setProducts((data ?? []) as ProductRow[]);
       return;
@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`);
+            .eq("product_code", numeric);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -1925,7 +1925,7 @@ function InventoryPageContent() {
             .from("products")
             .select("id")
             .or(
-              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`
+              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%`
             );
 
           if (prodErr) throw prodErr;
@@ -4123,9 +4123,11 @@ async function saveWrittenOffDetails() {
 }
 
 const writtenOffCostBreakdown = useMemo(() => {
-  const productCost = Number(writtenOffDetailRow?.unit_cost ?? 0);
-  const taxCost = Number(writtenOffDetailRow?.tax_amount ?? 0);
-  const shippingCost = Number(writtenOffDetailRow?.shipping_cost ?? 0);
+  const discountedParts = getDiscountedCostParts(writtenOffDetailRow);
+  const productCost = discountedParts.discountedUnitCost;
+  const discountAmount = discountedParts.discountAmount;
+  const taxCost = discountedParts.taxCost;
+  const shippingCost = discountedParts.shippingCost;
   const writtenOffCost = getWriteOffFee(writtenOffDetailRow);
   const miscCost = Number(writtenOffDetailRow?.misc_fees ?? 0);
   const returnShippingCost = Number(writtenOffDetailRow?.return_shipping_fee ?? 0);
@@ -4159,6 +4161,7 @@ const writtenOffCostBreakdown = useMemo(() => {
 
   return {
     productCost,
+    discountAmount,
     taxCost,
     shippingCost,
     amazonInboundPerItem,
@@ -6270,7 +6273,7 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
                           <td className="py-3 pr-4 font-semibold text-neutral-900">
                             {money(
-                              Number(r.unit_cost ?? 0) +
+                              rowDiscountedUnitCost(r) +
                               Number(r.tax_amount ?? 0) +
                               Number(r.shipping_cost ?? 0) +
                               getAmazonInboundPerItem(r) +
@@ -6291,7 +6294,7 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.asin ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.brand ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
-                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? Number(r.unit_cost ?? 0) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + getWriteOffFee(r) : totals.soldTotal)}</td>
+                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? rowDiscountedUnitCost(r) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + getWriteOffFee(r) : totals.soldTotal)}</td>
                           <td className="py-3 pr-4">{r.sale_type ?? "-"}</td>
                           <td className="py-3 pr-4">
                             {r.sold_amount == null ? "-" : money(Number(r.sold_amount))}
@@ -6798,6 +6801,9 @@ async function confirmSold() {
               <div className="text-sm font-semibold text-neutral-900">Cost Breakdown</div>
               <div className="mt-3 space-y-2 text-sm text-neutral-800">
                 <div className="flex items-center justify-between"><CostBreakdownLabel label="Unit Cost" help="Item cost after any discount has been applied." /><b>{money(writtenOffCostBreakdown.productCost)}</b></div>
+                {writtenOffCostBreakdown.discountAmount > 0 ? (
+                  <div className="flex items-center justify-between"><CostBreakdownLabel label="Discount" help="Discount applied to the item cost only. Shipping and VAT/tax are not discounted." /><b>-{money(writtenOffCostBreakdown.discountAmount)}</b></div>
+                ) : null}
                 <div className="flex items-center justify-between"><CostBreakdownLabel label="Tax" help="VAT/tax amount for the item. This is added separately and is not discounted." /><b>{money(writtenOffCostBreakdown.taxCost)}</b></div>
                 <div className="flex items-center justify-between"><CostBreakdownLabel label="Shipping" help="Inbound shipping cost paid to receive the item. This is added to the item cost basis." /><b>{money(writtenOffCostBreakdown.shippingCost)}</b></div>
                 <div className="flex items-center justify-between"><CostBreakdownLabel label="Ship to Amazon" help="Per-item shipment cost for sending stock to Amazon/FBA." /><b>{money(writtenOffCostBreakdown.amazonInboundPerItem)}</b></div>
@@ -7070,7 +7076,7 @@ async function confirmSold() {
       ) : null}
 
       {finaliseStep !== 0 ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
           <div
             className="w-full max-w-lg rounded-2xl border bg-white shadow-sm"
             onMouseDown={(e) => e.stopPropagation()}
