@@ -1807,7 +1807,7 @@ function InventoryPageContent() {
 
     if (Number.isFinite(numeric)) {
       const { data, error } = await q
-        .or(`product_code.eq.${numeric},product_name.ilike.%${text}%,barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
+        .or(`product_code.eq.${numeric},barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
         .limit(5);
       if (!error) setProducts((data ?? []) as ProductRow[]);
       return;
@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%`);
+            .eq("product_code", numeric);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -2099,7 +2099,12 @@ function InventoryPageContent() {
 let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
       rows = rows.filter((r) => {
         if (!shouldApplyTaxYearFilter(status)) return true;
-        const rowDate = getRowDateForRangeRaw(r);
+
+        const rowDate =
+          status === "written_off"
+            ? (r.write_off_date ?? r.written_off_date ?? r.updated_at ?? r.created_at)
+            : getRowDateForRangeRaw(r);
+
         return inSelectedTaxYear(rowDate, selectedTaxYear) && inSelectedRange(rowDate, range, selectedTaxYear);
       });
       setHasNextPage(rows.length > rowsPerPage);
@@ -6497,7 +6502,7 @@ async function confirmSold() {
         <div className={modalBackdrop()} onMouseDown={() => setAwaitingRefundOpen(false)}>
           <div className="w-full max-w-xl rounded-2xl border bg-white shadow-sm" onMouseDown={(e) => e.stopPropagation()}>
             <form
-              className="flex min-h-0 flex-1 flex-col"
+              className="contents"
               onSubmit={(e) => {
                 e.preventDefault();
                 saveAwaitingRefund();
@@ -6606,7 +6611,7 @@ async function confirmSold() {
         <div className={modalBackdrop()} onMouseDown={() => setRefundCompleteOpen(false)}>
           <div className="w-full max-w-lg rounded-2xl border bg-white shadow-sm" onMouseDown={(e) => e.stopPropagation()}>
             <form
-              className="flex min-h-0 flex-1 flex-col"
+              className="contents"
               onSubmit={(e) => {
                 e.preventDefault();
                 saveRefundComplete();
@@ -6692,7 +6697,7 @@ async function confirmSold() {
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+              <div className="space-y-3 p-5">
                 <div>
                   <div className={fieldLabel()}>Target ROI %</div>
                   <input
@@ -6975,7 +6980,7 @@ async function confirmSold() {
                 </button>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+              <div className="space-y-3 p-5">
                 {(purchases.find((p) => p.id === restoreTargetId)?.status === "awaiting_refund" ||
                   purchases.find((p) => p.id === restoreTargetId)?.status === "refunded") ? (
                   <div className="flex justify-end gap-2">
@@ -7067,7 +7072,7 @@ async function confirmSold() {
       {finaliseStep !== 0 ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
           <div
-            className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-white shadow-sm"
+            className="w-full max-w-lg rounded-2xl border bg-white shadow-sm"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <form
@@ -7149,7 +7154,7 @@ async function confirmSold() {
                           </div>
                         </div>
 
-                        <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+                        <div className="space-y-2">
                           {finaliseChecklistRows.map((row, index) => {
                             const checked = finaliseCheckedIds.includes(row.id);
                             const itemBarcode = row.product?.amazon_code || row.product?.barcode || "";
