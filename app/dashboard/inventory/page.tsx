@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .eq("product_code", numeric);
+            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -1925,7 +1925,7 @@ function InventoryPageContent() {
             .from("products")
             .select("id")
             .or(
-              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%`
+              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`
             );
 
           if (prodErr) throw prodErr;
