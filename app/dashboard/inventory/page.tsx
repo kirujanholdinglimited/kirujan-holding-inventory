@@ -7070,7 +7070,7 @@ async function confirmSold() {
       ) : null}
 
       {finaliseStep !== 0 ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
           <div
             className="w-full max-w-lg rounded-2xl border bg-white shadow-sm"
             onMouseDown={(e) => e.stopPropagation()}
