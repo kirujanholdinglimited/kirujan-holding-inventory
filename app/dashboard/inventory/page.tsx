@@ -2102,7 +2102,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
 
         const rowDate =
           status === "written_off"
-            ? (r["write_off_date"] ?? r["written_off_date"] ?? r["updated_at"] ?? r["created_at"])
+            ? (r.write_off_date ?? r.created_at)
             : getRowDateForRangeRaw(r);
 
         return inSelectedTaxYear(rowDate, selectedTaxYear) && inSelectedRange(rowDate, range, selectedTaxYear);
