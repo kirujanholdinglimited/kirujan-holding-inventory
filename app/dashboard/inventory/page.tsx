@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .eq("product_code", numeric);
+            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -1925,7 +1925,7 @@ function InventoryPageContent() {
             .from("products")
             .select("id")
             .or(
-              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%`
+              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`
             );
 
           if (prodErr) throw prodErr;
@@ -2102,7 +2102,7 @@ let rows = (purData ?? []) as unknown as PurchaseWithProduct[];
 
         const rowDate =
           status === "written_off"
-            ? (r.write_off_date ?? r.created_at)
+            ? (r["write_off_date"] ?? r["written_off_date"] ?? r["updated_at"] ?? r["created_at"])
             : getRowDateForRangeRaw(r);
 
         return inSelectedTaxYear(rowDate, selectedTaxYear) && inSelectedRange(rowDate, range, selectedTaxYear);
@@ -6273,7 +6273,7 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
                           <td className="py-3 pr-4 font-semibold text-neutral-900">
                             {money(
-                              rowDiscountedUnitCost(r) +
+                              Number(r.unit_cost ?? 0) +
                               Number(r.tax_amount ?? 0) +
                               Number(r.shipping_cost ?? 0) +
                               getAmazonInboundPerItem(r) +
@@ -6294,7 +6294,7 @@ async function confirmSold() {
                           <td className="py-3 pr-4">{p?.asin ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.brand ?? "-"}</td>
                           <td className="py-3 pr-4">{p?.product_name ?? "-"}</td>
-                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? rowDiscountedUnitCost(r) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + getWriteOffFee(r) : totals.soldTotal)}</td>
+                          <td className="py-3 pr-4 font-semibold text-neutral-900">{money(r.status === "written_off" ? Number(r.unit_cost ?? 0) + Number(r.tax_amount ?? 0) + Number(r.shipping_cost ?? 0) + getAmazonInboundPerItem(r) + 0 + Number(r.return_shipping_fee ?? 0) + Number(r.fbm_shipping_fee ?? 0) + Number(r.misc_fees ?? 0) + getWriteOffFee(r) : totals.soldTotal)}</td>
                           <td className="py-3 pr-4">{r.sale_type ?? "-"}</td>
                           <td className="py-3 pr-4">
                             {r.sold_amount == null ? "-" : money(Number(r.sold_amount))}
@@ -8376,22 +8376,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Shop *</div>
-                      <ShopInput
-                        inputRef={addPurchaseShopRef}
-                        value={shopStr}
-                        onChange={setShopStr}
-                        options={shopOptions}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Expiry Date (optional)</div>
                       <input
                         className={inputClass()}
                         type="date"
                         value={expiryDate}
                         onChange={(e) => setExpiryDate(e.target.value)}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Shop *</div>
+                      <ShopInput
+                        inputRef={addPurchaseShopRef}
+                        value={shopStr}
+                        onChange={setShopStr}
+                        options={shopOptions}
                       />
                     </div>
 
@@ -8435,22 +8435,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Shipping (£) (total)</div>
-                      <input
-                        className={inputClass()}
-                        inputMode="decimal"
-                        value={shippingStr}
-                        onChange={(e) => setShippingStr(sanitizeDecimalInput(e.target.value))}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Tax (£) (total)</div>
                       <input
                         className={inputClass()}
                         inputMode="decimal"
                         value={taxStr}
                         onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Shipping (£) (total)</div>
+                      <input
+                        className={inputClass()}
+                        inputMode="decimal"
+                        value={shippingStr}
+                        onChange={(e) => setShippingStr(sanitizeDecimalInput(e.target.value))}
                       />
                     </div>
 
