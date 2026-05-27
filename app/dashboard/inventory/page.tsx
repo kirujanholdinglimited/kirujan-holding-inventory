@@ -1807,7 +1807,7 @@ function InventoryPageContent() {
 
     if (Number.isFinite(numeric)) {
       const { data, error } = await q
-        .or(`product_code.eq.${numeric},barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
+        .or(`product_code.eq.${numeric},product_name.ilike.%${text}%,barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
         .limit(5);
       if (!error) setProducts((data ?? []) as ProductRow[]);
       return;
