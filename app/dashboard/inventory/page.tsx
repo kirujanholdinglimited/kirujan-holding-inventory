@@ -8376,22 +8376,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Expiry Date (optional)</div>
-                      <input
-                        className={inputClass()}
-                        type="date"
-                        value={expiryDate}
-                        onChange={(e) => setExpiryDate(e.target.value)}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Shop *</div>
                       <ShopInput
                         inputRef={addPurchaseShopRef}
                         value={shopStr}
                         onChange={setShopStr}
                         options={shopOptions}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Expiry Date (optional)</div>
+                      <input
+                        className={inputClass()}
+                        type="date"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
                       />
                     </div>
 
@@ -8435,22 +8435,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Tax (£) (total)</div>
-                      <input
-                        className={inputClass()}
-                        inputMode="decimal"
-                        value={taxStr}
-                        onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Shipping (£) (total)</div>
                       <input
                         className={inputClass()}
                         inputMode="decimal"
                         value={shippingStr}
                         onChange={(e) => setShippingStr(sanitizeDecimalInput(e.target.value))}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Tax (£) (total)</div>
+                      <input
+                        className={inputClass()}
+                        inputMode="decimal"
+                        value={taxStr}
+                        onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
                       />
                     </div>
 
