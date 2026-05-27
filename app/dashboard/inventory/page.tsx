@@ -1807,7 +1807,7 @@ function InventoryPageContent() {
 
     if (Number.isFinite(numeric)) {
       const { data, error } = await q
-        .or(`product_code.eq.${numeric},product_name.ilike.%${text}%,barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
+        .or(`product_code.eq.${numeric},barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
         .limit(5);
       if (!error) setProducts((data ?? []) as ProductRow[]);
       return;
@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`);
+            .eq("product_code", numeric);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -1925,7 +1925,7 @@ function InventoryPageContent() {
             .from("products")
             .select("id")
             .or(
-              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`
+              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%`
             );
 
           if (prodErr) throw prodErr;
@@ -7076,7 +7076,7 @@ async function confirmSold() {
       ) : null}
 
       {finaliseStep !== 0 ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/30 p-4" onMouseDown={() => !finaliseBusy && setFinaliseStep(0)}>
           <div
             className="w-full max-w-lg rounded-2xl border bg-white shadow-sm"
             onMouseDown={(e) => e.stopPropagation()}
@@ -8376,22 +8376,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Expiry Date (optional)</div>
-                      <input
-                        className={inputClass()}
-                        type="date"
-                        value={expiryDate}
-                        onChange={(e) => setExpiryDate(e.target.value)}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Shop *</div>
                       <ShopInput
                         inputRef={addPurchaseShopRef}
                         value={shopStr}
                         onChange={setShopStr}
                         options={shopOptions}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Expiry Date (optional)</div>
+                      <input
+                        className={inputClass()}
+                        type="date"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
                       />
                     </div>
 
@@ -8435,22 +8435,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Tax (£) (total)</div>
-                      <input
-                        className={inputClass()}
-                        inputMode="decimal"
-                        value={taxStr}
-                        onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Shipping (£) (total)</div>
                       <input
                         className={inputClass()}
                         inputMode="decimal"
                         value={shippingStr}
                         onChange={(e) => setShippingStr(sanitizeDecimalInput(e.target.value))}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Tax (£) (total)</div>
+                      <input
+                        className={inputClass()}
+                        inputMode="decimal"
+                        value={taxStr}
+                        onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
                       />
                     </div>
 
