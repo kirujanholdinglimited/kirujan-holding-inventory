@@ -326,7 +326,7 @@ function financeCategoryFromType(type: string | null | undefined) {
 function financeTypeLabel(type: string | null | undefined) {
   switch (String(type ?? "").trim()) {
     case "loan_introduced":
-      return "I Added Money";
+      return "I Added Money (owed back to director)";
     case "bank_loan_in":
       return "Bank Loan Received";
     case "loan_repayment":
