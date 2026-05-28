@@ -1807,7 +1807,7 @@ function InventoryPageContent() {
 
     if (Number.isFinite(numeric)) {
       const { data, error } = await q
-        .or(`product_code.eq.${numeric},barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
+        .or(`product_code.eq.${numeric},product_name.ilike.%${text}%,barcode.ilike.%${text}%,amazon_code.ilike.%${text}%`)
         .limit(5);
       if (!error) setProducts((data ?? []) as ProductRow[]);
       return;
@@ -1916,7 +1916,7 @@ function InventoryPageContent() {
           const { data: productMatches, error: prodErr } = await supabase
             .from("products")
             .select("id")
-            .eq("product_code", numeric);
+            .or(`product_code.eq.${numeric},product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`);
 
           if (prodErr) throw prodErr;
           productIdsForSearch = (productMatches ?? []).map((r: any) => r.id);
@@ -1925,7 +1925,7 @@ function InventoryPageContent() {
             .from("products")
             .select("id")
             .or(
-              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%`
+              `asin.ilike.%${searchText}%,brand.ilike.%${searchText}%,product_name.ilike.%${searchText}%,barcode.ilike.%${searchText}%,amazon_code.ilike.%${searchText}%`
             );
 
           if (prodErr) throw prodErr;
@@ -6505,7 +6505,7 @@ async function confirmSold() {
         <div className={modalBackdrop()} onMouseDown={() => setAwaitingRefundOpen(false)}>
           <div className="w-full max-w-xl rounded-2xl border bg-white shadow-sm" onMouseDown={(e) => e.stopPropagation()}>
             <form
-              className="contents"
+              className="flex min-h-0 flex-1 flex-col"
               onSubmit={(e) => {
                 e.preventDefault();
                 saveAwaitingRefund();
@@ -6700,7 +6700,7 @@ async function confirmSold() {
                 </button>
               </div>
 
-              <div className="space-y-3 p-5">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
                 <div>
                   <div className={fieldLabel()}>Target ROI %</div>
                   <input
@@ -6961,7 +6961,7 @@ async function confirmSold() {
 {restoreOpen && restoreTargetId ? (
         <div className={modalBackdrop()} onMouseDown={() => setRestoreOpen(false)}>
           <div
-            className="w-full max-w-lg rounded-2xl border bg-white shadow-sm"
+            className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border bg-white shadow-sm"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <form
@@ -7160,7 +7160,7 @@ async function confirmSold() {
                           </div>
                         </div>
 
-                        <div className="space-y-2">
+                        <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
                           {finaliseChecklistRows.map((row, index) => {
                             const checked = finaliseCheckedIds.includes(row.id);
                             const itemBarcode = row.product?.amazon_code || row.product?.barcode || "";
@@ -8385,22 +8385,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Expiry Date (optional)</div>
-                      <input
-                        className={inputClass()}
-                        type="date"
-                        value={expiryDate}
-                        onChange={(e) => setExpiryDate(e.target.value)}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Shop *</div>
                       <ShopInput
                         inputRef={addPurchaseShopRef}
                         value={shopStr}
                         onChange={setShopStr}
                         options={shopOptions}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Expiry Date (optional)</div>
+                      <input
+                        className={inputClass()}
+                        type="date"
+                        value={expiryDate}
+                        onChange={(e) => setExpiryDate(e.target.value)}
                       />
                     </div>
 
@@ -8444,22 +8444,22 @@ async function confirmSold() {
                     </div>
 
                     <div>
-                      <div className={fieldLabel()}>Tax (£) (total)</div>
-                      <input
-                        className={inputClass()}
-                        inputMode="decimal"
-                        value={taxStr}
-                        onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
-                      />
-                    </div>
-
-                    <div>
                       <div className={fieldLabel()}>Shipping (£) (total)</div>
                       <input
                         className={inputClass()}
                         inputMode="decimal"
                         value={shippingStr}
                         onChange={(e) => setShippingStr(sanitizeDecimalInput(e.target.value))}
+                      />
+                    </div>
+
+                    <div>
+                      <div className={fieldLabel()}>Tax (£) (total)</div>
+                      <input
+                        className={inputClass()}
+                        inputMode="decimal"
+                        value={taxStr}
+                        onChange={(e) => setTaxStr(sanitizeDecimalInput(e.target.value))}
                       />
                     </div>
 
