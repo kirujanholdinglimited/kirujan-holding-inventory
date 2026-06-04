@@ -2412,16 +2412,33 @@ export default function DashboardPage() {
       (agg as any)[st].value += totalValue;
     }
 
+    const outboundShipmentStock = shipmentRows.reduce(
+      (sum, row) => {
+        const shipmentDate = parseDate(row.shipment_date ?? row.sent_date ?? row.shipped_date ?? row.created_at);
+        const hasShipmentDate = Boolean(row.shipment_date ?? row.sent_date ?? row.shipped_date);
+        const hasCheckinDate = Boolean(row.checkin_date ?? row.received_date ?? row.amazon_checkin_date ?? row.fba_received_date ?? row.received_at_amazon);
+
+        if (!hasShipmentDate || hasCheckinDate) return sum;
+        if (!inDateRange(shipmentDate, selectedStockFyBounds.start, selectedStockFyBounds.end)) return sum;
+
+        return {
+          units: sum.units + toNumber(row.units ?? row.total_units ?? row.quantity),
+          value: sum.value + toNumber(row.box_value),
+        };
+      },
+      { units: 0, value: 0 }
+    );
+
     setStock((prev) => ({
       ...prev,
       inbound: { ...prev.inbound, units: agg.awaiting_delivery.units, value: agg.awaiting_delivery.value },
-      outbound: { ...prev.outbound, units: agg.sent_to_amazon.units, value: agg.sent_to_amazon.value },
+      outbound: { ...prev.outbound, units: outboundShipmentStock.units, value: outboundShipmentStock.value },
       home: { ...prev.home, units: agg.processing.units, value: agg.processing.value },
       selling: { ...prev.selling, units: agg.selling.units, value: agg.selling.value },
       damaged: { ...prev.damaged, units: agg.written_off.units, value: agg.written_off.value },
       sold: { ...prev.sold, units: agg.sold.units, value: agg.sold.value },
     }));
-  }, [purchaseRows, selectedFyLabel, currentFyLabel]);
+  }, [purchaseRows, shipmentRows, selectedFyLabel, currentFyLabel]);
 
   const fyLabel = isValidTaxYearLabel(selectedFyLabel) ? selectedFyLabel : currentFyLabel;
   const fyBounds = useMemo(() => getFyBounds(fyLabel), [fyLabel]);
