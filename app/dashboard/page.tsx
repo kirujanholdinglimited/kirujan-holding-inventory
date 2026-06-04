@@ -3062,7 +3062,7 @@ export default function DashboardPage() {
   );
 
   const openingStock = useMemo(
-    () => openingStockValueAtDate(purchaseRows, prevFyBounds.end),
+    () => stockValueAtDate(purchaseRows, prevFyBounds.end),
     [prevFyBounds.end, purchaseRows]
   );
   const turnover = useMemo(
