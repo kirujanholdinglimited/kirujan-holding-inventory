@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type Payout = {
   id: number;
@@ -98,29 +99,32 @@ export default function PayoutsPage() {
   });
 
   async function loadPayouts() {
-    const { data, error } = await supabase
-      .from("payouts")
-      .select("id, payout_date, reference, amount, created_at")
-      .order("payout_date", { ascending: false })
-      .order("id", { ascending: false });
+    const { data, error } = await fetchAllRows<Payout>(
+      "payouts",
+      "id, payout_date, reference, amount, created_at",
+      "payout_date",
+      { ascending: false, thenOrderColumn: "id", thenAscending: false }
+    );
 
     if (error) {
-      throw new Error(error.message);
+      throw new Error(error);
     }
 
-    setRows((data as Payout[]) || []);
+    setRows(data);
   }
 
   async function loadExpenseTotal(fromIso: string, toIso: string) {
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("amount, expense_date");
+    const { data, error } = await fetchAllRows<ExpenseRow & { expense_date?: string | null }>(
+      "expenses",
+      "amount, expense_date",
+      "id"
+    );
 
     if (error) {
-      throw new Error(error.message);
+      throw new Error(error);
     }
 
-    const total = ((data as (ExpenseRow & { expense_date?: string | null })[]) || []).reduce((sum, row) => {
+    const total = data.reduce((sum, row) => {
       const dt = parseDate((row as any).expense_date);
       const matches = Boolean(
         dt && dt >= parseDate(fromIso)! && dt <= parseDate(toIso)!
@@ -132,13 +136,13 @@ export default function PayoutsPage() {
   }
 
   async function loadPurchaseTotal(fromIso: string, toIso: string) {
-    const { data, error } = await supabase.from("purchases").select("*");
+    const { data, error } = await fetchAllRows<any>("purchases", "*", "id");
 
     if (error) {
-      throw new Error(error.message);
+      throw new Error(error);
     }
 
-    const total = ((data as any[]) || []).reduce((sum, row) => {
+    const total = data.reduce((sum, row) => {
       const dt = parseDate(row.purchase_date ?? row.created_at ?? null);
       const matches = Boolean(
         dt && dt >= parseDate(fromIso)! && dt <= parseDate(toIso)!

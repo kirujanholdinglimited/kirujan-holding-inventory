@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type Product = {
   asin: string;
@@ -462,9 +463,9 @@ export default function SalesPage() {
     setLoading(true);
     setError(null);
 
-    const purchasesRes = await supabase
-      .from("purchases")
-      .select(`
+    const purchasesRes = await fetchAllRows<Row>(
+      "purchases",
+      `
         id,
         product_id,
         purchase_date,
@@ -492,12 +493,18 @@ export default function SalesPage() {
         last_return_date,
         status,
         product:products(asin,brand,product_name,product_code)
-      `)
-      .eq("status", "sold")
-      .order("order_date", { ascending: false });
+      `,
+      "order_date",
+      {
+        ascending: false,
+        thenOrderColumn: "id",
+        thenAscending: false,
+        filter: (query) => query.eq("status", "sold"),
+      }
+    );
 
     if (purchasesRes.error) {
-      setError(purchasesRes.error.message);
+      setError(purchasesRes.error);
       setRows([]);
       setShipments([]);
       setLoading(false);
