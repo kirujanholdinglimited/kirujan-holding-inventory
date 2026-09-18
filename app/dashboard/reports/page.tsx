@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type RangeKey = "1D" | "7D" | "4W" | "LM" | "CM" | "6M" | "1Y" | "FY";
 type ReportStatus = "ready" | "build" | "planned";
@@ -370,10 +370,12 @@ function isMissingTableError(message: string) {
 }
 
 async function loadTableSafe(tableName: string): Promise<TableLoadResult> {
-  const result = await supabase.from(tableName).select("*");
+  // Every candidate table here uses "id" as its primary key, so it's a
+  // safe, stable column to page through the whole table on.
+  const result = await fetchAllRows<GenericRow>(tableName, "*", "id");
 
   if (result.error) {
-    if (isMissingTableError(result.error.message)) {
+    if (isMissingTableError(result.error)) {
       return {
         rows: [],
         exists: false,
@@ -385,13 +387,13 @@ async function loadTableSafe(tableName: string): Promise<TableLoadResult> {
     return {
       rows: [],
       exists: false,
-      message: `${tableName}: ${result.error.message}`,
+      message: `${tableName}: ${result.error}`,
       tableName: null,
     };
   }
 
   return {
-    rows: (result.data as GenericRow[]) ?? [],
+    rows: result.data,
     exists: true,
     message: "",
     tableName,
