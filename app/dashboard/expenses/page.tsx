@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type Expense = {
   id: number;
@@ -423,10 +424,9 @@ export default function ExpensesPage() {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await supabase
-      .from("expenses")
-      .select(
-        `
+    const { data, error } = await fetchAllRows<Expense>(
+      "expenses",
+      `
           id,
           expense_date,
           item,
@@ -439,17 +439,16 @@ export default function ExpensesPage() {
           is_allowable,
           is_capital,
           notes
-        `
-      )
-      .order("expense_date", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(1000);
+        `,
+      "expense_date",
+      { ascending: false, thenOrderColumn: "id", thenAscending: false }
+    );
 
     if (error) {
-      setError(error.message);
+      setError(error);
       setRows([]);
     } else {
-      setRows((data ?? []) as Expense[]);
+      setRows(data);
     }
 
     setLoading(false);

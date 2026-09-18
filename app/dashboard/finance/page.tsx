@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type FinanceMode = "in" | "out";
 type HistoryFilter = "all" | "month" | "taxyear";
@@ -260,20 +261,25 @@ export default function FinancePage() {
     setLoading(true);
     setErrorText("");
 
-    const { data, error } = await supabase
-      .from("director_transactions")
-      .select("*")
-      .order("transaction_date", { ascending: false })
-      .order("id", { ascending: false });
+    // Same order as before (transaction_date desc, id desc as tiebreak) -
+    // though note the running-balance calc below re-sorts everything into
+    // ascending (transaction_date, id) order itself before using it, so
+    // fetch order here only matters for stable pagination, not correctness.
+    const { data, error } = await fetchAllRows<FinanceTransaction>(
+      "director_transactions",
+      "*",
+      "transaction_date",
+      { ascending: false, thenOrderColumn: "id", thenAscending: false }
+    );
 
     if (error) {
       setTransactions([]);
-      setErrorText(`Failed to load entries: ${error.message}`);
+      setErrorText(`Failed to load entries: ${error}`);
       setLoading(false);
       return;
     }
 
-    setTransactions((data as FinanceTransaction[]) ?? []);
+    setTransactions(data);
     setLoading(false);
   }
 

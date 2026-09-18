@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type ShipmentStatusKey = "preparing" | "in_transit" | "received_by_amazon";
 
@@ -256,10 +257,9 @@ export default function ShipmentsPage() {
     setPageError(null);
 
     try {
-      const { data, error } = await supabase
-        .from("shipments")
-        .select(
-          `
+      const { data, error } = await fetchAllRows<ShipmentRow>(
+        "shipments",
+        `
           id,
           created_at,
           shipment_box_no,
@@ -274,12 +274,13 @@ export default function ShipmentsPage() {
           weight_kg,
           tracking_no,
           carrier
-        `
-        )
-        .order("created_at", { ascending: false });
+        `,
+        "created_at",
+        { ascending: false, thenOrderColumn: "id", thenAscending: false }
+      );
 
-      if (error) throw error;
-      setShipments((data ?? []) as ShipmentRow[]);
+      if (error) throw new Error(error);
+      setShipments(data);
     } catch (e: any) {
       setPageError(e?.message ?? "Failed to load shipments.");
     } finally {
