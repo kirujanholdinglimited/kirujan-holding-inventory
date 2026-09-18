@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { fetchAllRows } from "../../../lib/fetchAllRows";
 
 type ProductRow = {
   id: string;
@@ -199,16 +200,20 @@ export default function CatalogPage() {
     setLoading(true);
     setPageErr(null);
 
-    const { data, error } = await supabase
-      .from("products")
-      .select("id, asin, brand, product_name, product_code, barcode, amazon_code")
-      .order("product_code", { ascending: true });
+    // product_code is unique (Postgres IDENTITY column), so it's a safe,
+    // stable pagination key and it's also the order we want to display in.
+    const { data, error } = await fetchAllRows<ProductRow>(
+      "products",
+      "id, asin, brand, product_name, product_code, barcode, amazon_code",
+      "product_code",
+      { ascending: true }
+    );
 
     if (error) {
       setRows([]);
-      setPageErr(error.message);
+      setPageErr(error);
     } else {
-      setRows((data ?? []) as ProductRow[]);
+      setRows(data);
     }
 
     setLoading(false);
