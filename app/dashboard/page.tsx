@@ -16,6 +16,38 @@ import {
 } from "recharts";
 import { supabase } from "@/lib/supabase";
 
+const SUPABASE_PAGE_SIZE = 1000;
+
+// Supabase/PostgREST caps an unbounded `.select()` at a default row limit
+// (commonly 1000). Fetching a whole table for client-side use must always
+// go through this helper instead of a bare `.select()`, so a table growing
+// past that cap can never silently drop rows again.
+async function fetchAllRows<T>(
+  table: string,
+  selectClause: string,
+  orderColumn: string,
+  options?: { ascending?: boolean }
+): Promise<{ data: T[]; error: string | null }> {
+  const all: T[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select(selectClause)
+      .order(orderColumn, { ascending: options?.ascending ?? true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) return { data: all, error: error.message };
+
+    const batch = (data ?? []) as T[];
+    all.push(...batch);
+    if (batch.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return { data: all, error: null };
+}
 
 type FinanceRow = {
   [key: string]: any;
@@ -152,6 +184,7 @@ type MonthlyPerformanceRow = {
   writeOff: number;
   misc: number;
   expenses: number;
+  fixedAssets: number;
   totalCost: number;
   sales: number;
   profitLoss: number;
@@ -1966,6 +1999,11 @@ export default function DashboardPage() {
     damaged: { units: 0, value: 0, hint: "Write-off / loss" },
     sold: { units: 0, value: 0, hint: "Units sold (not stock)" },
   }));
+  // Bumped after any purchase/shipment mutation to re-run the server-side
+  // stock summary and monthly performance RPCs (they no longer depend on
+  // purchaseRows/shipmentRows directly, since those are only a page's worth
+  // of data locally -- the RPCs read the full tables in Postgres instead).
+  const [dashboardAggregatesTick, setDashboardAggregatesTick] = useState(0);
 
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -2010,13 +2048,15 @@ export default function DashboardPage() {
 
 
   const fetchFinanceRows = async () => {
-    const directorTx = await supabase
-      .from("director_transactions")
-      .select("id, transaction_date, transaction_type, amount, description, reference, notes");
+    const directorTx = await fetchAllRows<Record<string, any>>(
+      "director_transactions",
+      "id, transaction_date, transaction_type, amount, description, reference, notes",
+      "id"
+    );
 
-    if (!directorTx.error && (directorTx.data ?? []).length > 0) {
+    if (!directorTx.error && directorTx.data.length > 0) {
       setFinanceErr(null);
-      return ((directorTx.data ?? []) as Record<string, any>[]).map((row) => ({
+      return directorTx.data.map((row) => ({
         id: row.id,
         entry_date: row.transaction_date ?? null,
         transaction_type: row.transaction_type ?? null,
@@ -2031,13 +2071,15 @@ export default function DashboardPage() {
     }
 
     const normalizedSingleTable = async () => {
-      const result = await supabase
-        .from("finance_entries")
-        .select("id,entry_date,date,finance_date,category,type,item,description,notes,amount");
+      const result = await fetchAllRows<Record<string, any>>(
+        "finance_entries",
+        "id,entry_date,date,finance_date,category,type,item,description,notes,amount",
+        "id"
+      );
 
-      if (result.error) return { rows: [] as FinanceEntryRow[], error: result.error.message };
+      if (result.error) return { rows: [] as FinanceEntryRow[], error: result.error };
 
-      const rows = ((result.data ?? []) as Record<string, any>[]).map((row) => ({
+      const rows = result.data.map((row) => ({
         ...row,
         amount: safeNumber(row.amount),
         category: String(row.category ?? row.type ?? ""),
@@ -2053,7 +2095,7 @@ export default function DashboardPage() {
       return single.rows;
     }
 
-    setFinanceErr(directorTx.error?.message ?? single.error ?? "No finance records found from the finance page source.");
+    setFinanceErr(directorTx.error ?? single.error ?? "No finance records found from the finance page source.");
     return [] as FinanceEntryRow[];
   };
 
@@ -2328,53 +2370,58 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
-      const purchases = await supabase
-        .from("purchases")
-        .select(`*, product:products(id, asin, brand, product_name, product_code)`);
+      const purchases = await fetchAllRows<PurchaseDashboardRow>(
+        "purchases",
+        `*, product:products(id, asin, brand, product_name, product_code)`,
+        "id"
+      );
 
       if (purchases.error) {
-        setStockErr(purchases.error.message);
+        setStockErr(purchases.error);
         setPurchaseRows([]);
       } else {
         setStockErr(null);
-        setPurchaseRows((purchases.data ?? []) as PurchaseDashboardRow[]);
+        setPurchaseRows(purchases.data);
       }
 
-      const shipments = await supabase
-        .from("shipments")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const shipments = await fetchAllRows<ShipmentAny>("shipments", "*", "created_at", {
+        ascending: false,
+      });
 
       if (shipments.error) {
-        setShipmentErr(shipments.error.message);
+        setShipmentErr(shipments.error);
         setShipmentRows([]);
       } else {
         setShipmentErr(null);
-        setShipmentRows((shipments.data ?? []) as ShipmentAny[]);
+        setShipmentRows(shipments.data);
       }
 
-      const expAll = await supabase
-        .from("expenses")
-        .select("id,expense_date,operational_category,item,amount,is_allowable,is_capital,notes")
-        .order("expense_date", { ascending: false });
+      const expAll = await fetchAllRows<ExpenseRow>(
+        "expenses",
+        "id,expense_date,operational_category,item,amount,is_allowable,is_capital,notes",
+        "expense_date",
+        { ascending: false }
+      );
 
       if (expAll.error) {
         setAllExpenseRows([]);
       } else {
-        setAllExpenseRows((expAll.data ?? []) as ExpenseRow[]);
+        setAllExpenseRows(expAll.data);
       }
 
-      const payouts = await supabase
-        .from("payouts")
-        .select("id,payout_date,reference,amount")
-        .order("payout_date", { ascending: false });
+      const payouts = await fetchAllRows<PayoutRow>(
+        "payouts",
+        "id,payout_date,reference,amount",
+        "payout_date",
+        { ascending: false }
+      );
 
       if (payouts.error) {
-        setPayoutErr(payouts.error.message);
+        setPayoutErr(payouts.error);
         setPayoutRows([]);
       } else {
         setPayoutErr(null);
-        setPayoutRows((payouts.data ?? []) as PayoutRow[]);
+        setPayoutRows(payouts.data);
       }
 
       const finance = await fetchFinanceRows();
@@ -2386,59 +2433,46 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const agg = {
-      awaiting_delivery: { units: 0, value: 0 },
-      sent_to_amazon: { units: 0, value: 0 },
-      processing: { units: 0, value: 0 },
-      selling: { units: 0, value: 0 },
-      sold: { units: 0, value: 0 },
-      written_off: { units: 0, value: 0 },
-    };
-
     const selectedStockFyLabel = isValidTaxYearLabel(selectedFyLabel) ? selectedFyLabel : currentFyLabel;
-    const selectedStockFyBounds = getFyBounds(selectedStockFyLabel);
+    let cancelled = false;
 
-    for (const r of purchaseRows) {
-      const st = normalizeStatus(r?.status);
-      if (!(st in agg)) continue;
+    (async () => {
+      const { data, error } = await supabase.rpc("dashboard_stock_summary", {
+        p_fy_label: selectedStockFyLabel,
+      });
 
-      if (st === "sold" && !inDateRange(rowSoldOrRemovedDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
-      if (st === "written_off" && !inDateRange(rowWriteOffDate(r), selectedStockFyBounds.start, selectedStockFyBounds.end)) continue;
+      if (cancelled) return;
 
-      const qty = rowQty(r);
-      if (qty <= 0) continue;
-      const totalValue = rowValueAtCost(r);
-      (agg as any)[st].units += qty;
-      (agg as any)[st].value += totalValue;
-    }
+      if (error) {
+        setStockErr(error.message);
+        return;
+      }
 
-    const outboundShipmentStock = shipmentRows.reduce(
-      (sum, row) => {
-        const shipmentDate = parseDate(row.shipment_date ?? row.sent_date ?? row.shipped_date ?? row.created_at);
-        const hasShipmentDate = Boolean(row.shipment_date ?? row.sent_date ?? row.shipped_date);
-        const hasCheckinDate = Boolean(row.checkin_date ?? row.received_date ?? row.amazon_checkin_date ?? row.fba_received_date ?? row.received_at_amazon);
+      setStockErr(null);
 
-        if (!hasShipmentDate || hasCheckinDate) return sum;
-        if (!inDateRange(shipmentDate, selectedStockFyBounds.start, selectedStockFyBounds.end)) return sum;
+      const byBucket = new Map<string, { units: number; value: number }>(
+        ((data ?? []) as { bucket: string; units: number; value: number }[]).map((row) => [
+          row.bucket,
+          { units: toNumber(row.units), value: toNumber(row.value) },
+        ])
+      );
+      const bucket = (name: string) => byBucket.get(name) ?? { units: 0, value: 0 };
 
-        return {
-          units: sum.units + toNumber(row.units ?? row.total_units ?? row.quantity),
-          value: sum.value + toNumber(row.box_value),
-        };
-      },
-      { units: 0, value: 0 }
-    );
+      setStock((prev) => ({
+        ...prev,
+        inbound: { ...prev.inbound, ...bucket("inbound") },
+        outbound: { ...prev.outbound, ...bucket("outbound") },
+        home: { ...prev.home, ...bucket("processing") },
+        selling: { ...prev.selling, ...bucket("selling") },
+        damaged: { ...prev.damaged, ...bucket("damaged") },
+        sold: { ...prev.sold, ...bucket("sold") },
+      }));
+    })();
 
-    setStock((prev) => ({
-      ...prev,
-      inbound: { ...prev.inbound, units: agg.awaiting_delivery.units, value: agg.awaiting_delivery.value },
-      outbound: { ...prev.outbound, units: outboundShipmentStock.units, value: outboundShipmentStock.value },
-      home: { ...prev.home, units: agg.processing.units, value: agg.processing.value },
-      selling: { ...prev.selling, units: agg.selling.units, value: agg.selling.value },
-      damaged: { ...prev.damaged, units: agg.written_off.units, value: agg.written_off.value },
-      sold: { ...prev.sold, units: agg.sold.units, value: agg.sold.value },
-    }));
-  }, [purchaseRows, shipmentRows, selectedFyLabel, currentFyLabel]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFyLabel, currentFyLabel, dashboardAggregatesTick]);
 
   const fyLabel = isValidTaxYearLabel(selectedFyLabel) ? selectedFyLabel : currentFyLabel;
   const fyBounds = useMemo(() => getFyBounds(fyLabel), [fyLabel]);
@@ -2815,138 +2849,100 @@ export default function DashboardPage() {
     [allExpenseRows, fyBounds]
   );
 
-  const monthlyPerformanceRows = useMemo(() => {
-    const months = getFinancialYearMonths(fyLabel);
+  // Server-side replacement for the useMemo that used to re-derive these
+  // figures from purchaseRows/shipmentRows/etc in the browser (see
+  // dashboard_monthly_performance() in the Supabase migration). It needs
+  // the previous FY's 13 periods too, both for period 0's month-on-month
+  // comparison (which looks back into the tail of the previous tax year)
+  // and for the yearly year-on-year sales comparison below.
+  const [monthlyPerformanceRows, setMonthlyPerformanceRows] = useState<MonthlyPerformanceRow[]>([]);
+  const [prevFyMonthlyPerformanceSales, setPrevFyMonthlyPerformanceSales] = useState<number[]>([]);
+  const [monthlyPerformanceErr, setMonthlyPerformanceErr] = useState<string | null>(null);
 
-    return months.map((month, index) => {
-      const soldRows = purchaseRows.filter((row) => {
-        if (normalizeStatus(row.status) !== "sold") return false;
-        return inDateRange(parseDate(row.order_date ?? row.created_at), month.start, month.end);
-      });
+  useEffect(() => {
+    let cancelled = false;
 
-      const returnFeeRowsForMonth = purchaseRows.filter((row) => {
-        if (rowCustomerReturnFee(row) <= 0) return false;
-        return inDateRange(rowCustomerReturnFeeDate(row), month.start, month.end);
-      });
+    (async () => {
+      const months = getFinancialYearMonths(fyLabel);
 
-      const writeOffRows = purchaseRows.filter((row) => {
-        if (rowWriteOffFee(row) <= 0) return false;
-        return inDateRange(parseDate(row.write_off_date ?? row.written_off_date ?? row.removed_date ?? row.updated_at ?? row.created_at), month.start, month.end);
-      });
+      const [currentResult, prevResult] = await Promise.all([
+        supabase.rpc("dashboard_monthly_performance", { p_fy_label: fyLabel }),
+        supabase.rpc("dashboard_monthly_performance", { p_fy_label: prevFyLabel }),
+      ]);
 
-      const returnFeeRows = purchaseRows.filter((row) => {
-        if (rowReturnFee(row) <= 0) return false;
-        return inDateRange(rowReturnFeeDate(row), month.start, month.end);
-      });
+      if (cancelled) return;
 
-      const fbmShippingRows = purchaseRows.filter((row) => {
-        if (rowFbmShippingFee(row) <= 0) return false;
-        return inDateRange(rowFbmShippingDate(row), month.start, month.end);
-      });
+      if (currentResult.error) {
+        setMonthlyPerformanceErr(currentResult.error.message);
+        setMonthlyPerformanceRows([]);
+        return;
+      }
 
-      const payoutRowsForMonth = payoutRows.filter((row) =>
-        inDateRange(parseDate(row.payout_date), month.start, month.end)
-      );
-
-      const unitsSold = soldRows.reduce((sum, row) => sum + Math.max(1, rowQty(row)), 0);
-      const purchaseRowsForMonth = purchaseRows.filter((row) =>
-        inDateRange(parseDate(row.purchase_date ?? row.created_at), month.start, month.end)
-      );
-      const supplierRefundRowsForMonth = purchaseRows.filter(
-        (row) =>
-          isConfirmedSupplierRefund(row) &&
-          inDateRange(rowSupplierRefundDate(row), month.start, month.end)
-      );
-      const shipmentRowsForMonth = shipmentRows.filter((row) =>
-        inDateRange(parseDate(row.shipment_date ?? row.sent_date ?? row.shipped_date ?? row.created_at), month.start, month.end)
-      );
-
-      const amazonFees = moneyValue(soldRows.reduce((sum, row) => sum + toNumber(row.amazon_fees), 0));
-      const supplierRefundOriginalCost = supplierRefundRowsForMonth.reduce(
-        (sum, row) => sum + rowSupplierRefundOriginalCost(row),
-        0
-      );
-      const supplierRefundLoss = supplierRefundRowsForMonth.reduce(
-        (sum, row) => sum + rowSupplierRefundLoss(row),
-        0
-      );
-      const productCost = moneyValue(
-        purchaseRowsForMonth.reduce((sum, row) => sum + rowValueAtCost(row), 0) - supplierRefundOriginalCost
-      );
-      const shipments = moneyValue(shipmentRowsForMonth.reduce((sum, row) => sum + shipmentTotalWithTax(row), 0) + fbmShippingRows.reduce((sum, row) => sum + rowFbmShippingFee(row), 0));
-      const refunds = moneyValue(
-        soldRows.reduce(
-          (sum, row) =>
-            sum +
-            toNumber(row.refund_amount) +
-            toNumber(row.refunded_amount),
-          0
-        ) + returnFeeRowsForMonth.reduce((sum, row) => sum + rowCustomerReturnFee(row), 0)
-      );
-      const writeOff = moneyValue(writeOffRows.reduce((sum, row) => sum + rowWriteOffFee(row), 0));
-      const miscPurchaseRowsForMonth = purchaseRowsForMonth.filter((row) => normalizeStatus(row.status) !== "sold");
-      const misc =
-        soldRows.reduce((sum, row) => sum + toNumber(row.misc_fees), 0) +
-        miscPurchaseRowsForMonth.reduce((sum, row) => sum + toNumber(row.misc_fees), 0);
-      const expenseRowsForMonth = allExpenseRows.filter((row) =>
-        inDateRange(parseDate(row.expense_date), month.start, month.end)
-      );
-      const loanInterestRowsForMonth = financeRows.filter((row) => {
-        if (!isLoanInterestFinanceRow(row)) return false;
-        return inDateRange(parseDate(row.entry_date ?? row.date ?? row.finance_date), month.start, month.end);
-      });
-      const loanInterestExpensesForMonth = loanInterestRowsForMonth.reduce(
-        (sum, row) => sum + safeNumber(row.amount),
-        0
-      );
-      const expenses = moneyValue(
-        expenseRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0) +
-          loanInterestExpensesForMonth +
-          supplierRefundLoss
-      );
-      const fixedAssets = 0;
-      const sales = soldRows.reduce((sum, row) => sum + toNumber(row.sold_amount), 0);
-      const amzPayout =
-        soldRows.reduce((sum, row) => sum + toNumber(row.amazon_payout), 0) ||
-        payoutRowsForMonth.reduce((sum, row) => sum + toNumber(row.amount), 0);
-
-      const totalCost = moneyValue(amazonFees + productCost + shipments + refunds + writeOff + misc + expenses);
-      const profitLoss = moneyValue(sales - totalCost);
-      const roi = totalCost > 0 ? (profitLoss / totalCost) * 100 : null;
-
-      const comparisonBounds = index > 0 ? months[index - 1] : getPreviousCalendarMonthBounds(month.start);
-      const prevSales = purchaseRows
-        .filter(
-          (row) =>
-            normalizeStatus(row.status) === "sold" &&
-            inDateRange(parseDate(row.order_date ?? row.created_at), comparisonBounds.start, comparisonBounds.end)
-        )
-        .reduce((sum, row) => sum + toNumber(row.sold_amount), 0);
-
-      let salesMoM: number | null = null;
-      if (prevSales === 0) salesMoM = sales > 0 ? 100 : 0;
-      else salesMoM = ((sales - prevSales) / prevSales) * 100;
-
-      return {
-        month: month.label,
-        unitsSold,
-        amazonFees,
-        productCost,
-        shipments,
-        refunds,
-        writeOff,
-        misc,
-        expenses,
-        fixedAssets,
-        totalCost,
-        sales,
-        profitLoss,
-        roi,
-        salesMoM,
-        amzPayout,
+      type PerformancePeriodRow = {
+        period_index: number;
+        units_sold: number;
+        amazon_fees: number;
+        product_cost: number;
+        shipments: number;
+        refunds: number;
+        write_off: number;
+        misc: number;
+        expenses: number;
+        sales: number;
+        total_cost: number;
+        profit_loss: number;
+        roi: number | null;
+        amz_payout: number;
       };
-    });
-  }, [allExpenseRows, financeRows, fyLabel, payoutRows, purchaseRows, shipmentRows]);
+
+      const current = ((currentResult.data ?? []) as PerformancePeriodRow[]).sort(
+        (a, b) => a.period_index - b.period_index
+      );
+      const prevSalesByIndex = prevResult.error
+        ? []
+        : ((prevResult.data ?? []) as PerformancePeriodRow[])
+            .sort((a, b) => a.period_index - b.period_index)
+            .map((row) => toNumber(row.sales));
+
+      setMonthlyPerformanceErr(null);
+      setPrevFyMonthlyPerformanceSales(prevSalesByIndex);
+
+      setMonthlyPerformanceRows(
+        current.map((row, index) => {
+          const sales = toNumber(row.sales);
+          // Period 0 (6-30 Apr) compares against the previous tax year's
+          // last period (1-5 Apr of the previous end year), same as
+          // getPreviousCalendarMonthBounds() used to. Every other period
+          // compares against its own predecessor in this same FY.
+          const prevSales = index > 0 ? toNumber(current[index - 1]?.sales) : prevSalesByIndex[12] ?? 0;
+          const salesMoM = prevSales === 0 ? (sales > 0 ? 100 : 0) : ((sales - prevSales) / prevSales) * 100;
+
+          return {
+            month: months[index]?.label ?? `Period ${row.period_index}`,
+            unitsSold: toNumber(row.units_sold),
+            amazonFees: toNumber(row.amazon_fees),
+            productCost: toNumber(row.product_cost),
+            shipments: toNumber(row.shipments),
+            refunds: toNumber(row.refunds),
+            writeOff: toNumber(row.write_off),
+            misc: toNumber(row.misc),
+            expenses: toNumber(row.expenses),
+            fixedAssets: 0,
+            totalCost: toNumber(row.total_cost),
+            sales,
+            profitLoss: toNumber(row.profit_loss),
+            roi: row.roi == null ? null : toNumber(row.roi),
+            salesMoM,
+            amzPayout: toNumber(row.amz_payout),
+          };
+        })
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fyLabel, prevFyLabel, dashboardAggregatesTick]);
 
   const profitTrendData = useMemo(
     () =>
@@ -3013,21 +3009,7 @@ export default function DashboardPage() {
 
     const roi = totals.totalCost > 0 ? (totals.profitLoss / totals.totalCost) * 100 : null;
 
-    const [fyStartYear] = fyLabel.split("-").map(Number);
-    const previousYearLabel = `${fyStartYear - 1}-${fyStartYear}`;
-    const prevMonths = getFinancialYearMonths(previousYearLabel);
-
-    const previousYearSales = prevMonths.reduce((sum, month) => {
-      const salesForMonth = purchaseRows
-        .filter(
-          (row) =>
-            normalizeStatus(row.status) === "sold" &&
-            inDateRange(parseDate(row.order_date ?? row.created_at), month.start, month.end)
-        )
-        .reduce((inner, row) => inner + toNumber(row.sold_amount), 0);
-
-      return sum + salesForMonth;
-    }, 0);
+    const previousYearSales = prevFyMonthlyPerformanceSales.reduce((sum, sales) => sum + sales, 0);
 
     const salesYoY =
       previousYearSales === 0
@@ -3042,7 +3024,7 @@ export default function DashboardPage() {
       roi,
       salesYoY,
     };
-  }, [fyLabel, monthlyPerformanceRows, purchaseRows]);
+  }, [fyLabel, monthlyPerformanceRows, prevFyMonthlyPerformanceSales]);
 
   const yearlyPerformanceChartData = useMemo(
     () => [
@@ -3406,10 +3388,15 @@ export default function DashboardPage() {
   }
 
   async function reloadPurchases() {
-    const purchases = await supabase
-      .from("purchases")
-      .select(`*, product:products(id, asin, brand, product_name, product_code)`);
-    if (!purchases.error) setPurchaseRows((purchases.data ?? []) as PurchaseDashboardRow[]);
+    const purchases = await fetchAllRows<PurchaseDashboardRow>(
+      "purchases",
+      `*, product:products(id, asin, brand, product_name, product_code)`,
+      "id"
+    );
+    if (!purchases.error) {
+      setPurchaseRows(purchases.data);
+      setDashboardAggregatesTick((t) => t + 1);
+    }
   }
 
 
@@ -3564,11 +3551,13 @@ export default function DashboardPage() {
   }
 
   async function reloadShipments() {
-    const shipments = await supabase
-      .from("shipments")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (!shipments.error) setShipmentRows((shipments.data ?? []) as ShipmentAny[]);
+    const shipments = await fetchAllRows<ShipmentAny>("shipments", "*", "created_at", {
+      ascending: false,
+    });
+    if (!shipments.error) {
+      setShipmentRows(shipments.data);
+      setDashboardAggregatesTick((t) => t + 1);
+    }
   }
 
   async function setDeliveredNow(purchaseId: string) {
@@ -6474,6 +6463,11 @@ const exportSystemKpiHistoryPdf = () => {
 
           {monthlyPerformanceOpen ? (
             <div className="mt-6 space-y-6">
+              {monthlyPerformanceErr ? (
+                <div className="rounded-xl border bg-red-50 p-3 text-sm text-red-700">
+                  {monthlyPerformanceErr}
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-neutral-50 p-4">
                 <div>
                   <div className="text-sm font-semibold text-neutral-900">Performance View</div>
