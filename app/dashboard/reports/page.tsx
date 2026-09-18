@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { roundMoney } from "../../../lib/money";
 
 type RangeKey = "1D" | "7D" | "4W" | "LM" | "CM" | "6M" | "1Y" | "FY";
 type ReportStatus = "ready" | "build" | "planned";
@@ -284,7 +285,7 @@ function detectInventoryValue(row: GenericRow) {
     ])
   );
 
-  if (explicit > 0) return explicit;
+  if (explicit > 0) return roundMoney(explicit);
 
   const status = firstNonEmptyString(
     getValue(row, ["status", "inventory_status", "item_status"])
@@ -326,8 +327,8 @@ function detectInventoryValue(row: GenericRow) {
     return 0;
   }
 
-  if (totalCost > 0) return totalCost;
-  if (qty > 0 && unitCost > 0) return qty * unitCost;
+  if (totalCost > 0) return roundMoney(totalCost);
+  if (qty > 0 && unitCost > 0) return roundMoney(qty * unitCost);
   return 0;
 }
 

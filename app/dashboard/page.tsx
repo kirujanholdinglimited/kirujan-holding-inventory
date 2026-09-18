@@ -3478,10 +3478,11 @@ export default function DashboardPage() {
         shipping_cost: shipParts[i] ?? 0,
         discount_type: eDiscountType,
         discount_value: eDiscountType === "fixed" ? fixedDiscountParts[i] ?? 0 : discountValue || 0,
-        total_cost:
+        total_cost: moneyValue(
           eDiscountType === "percent"
             ? Math.max(0, unitCost - (unitCost * (discountValue || 0)) / 100) + (taxParts[i] ?? 0) + (shipParts[i] ?? 0)
-            : Math.max(0, unitCost + (taxParts[i] ?? 0) + (shipParts[i] ?? 0) - (fixedDiscountParts[i] ?? 0)),
+            : Math.max(0, unitCost + (taxParts[i] ?? 0) + (shipParts[i] ?? 0) - (fixedDiscountParts[i] ?? 0))
+        ),
         tax_year: computeUkTaxYear(pDate),
         status: initialStatus,
         write_off_reason: null,
@@ -3666,12 +3667,13 @@ export default function DashboardPage() {
           shipping_cost: eShip || 0,
           discount_type: eDiscountType,
           discount_value: eDiscVal || 0,
-          total_cost:
+          total_cost: moneyValue(
             eDiscountType === "percent"
               ? Math.max(0, eUnit - (eUnit * (eDiscVal || 0)) / 100) * eQty +
                 (eTax || 0) +
                 (eShip || 0)
-              : Math.max(0, eUnit * eQty + (eTax || 0) + (eShip || 0) - (eDiscVal || 0)),
+              : Math.max(0, eUnit * eQty + (eTax || 0) + (eShip || 0) - (eDiscVal || 0))
+          ),
         })
         .eq("id", selectedPurchase.id);
 

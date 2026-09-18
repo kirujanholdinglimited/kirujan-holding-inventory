@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+import { roundMoney } from "../../../lib/money";
 
 
 type StatusKey =
@@ -4626,12 +4627,13 @@ async function confirmSold() {
         shipping_cost: shipParts[i] ?? 0,
         discount_type: discountType,
         discount_value: discountType === "fixed" ? fixedDiscountParts[i] ?? 0 : discountValue || 0,
-        total_cost:
+        total_cost: roundMoney(
           discountType === "percent"
             ? Math.max(0, unitCost - (unitCost * (discountValue || 0)) / 100) +
               (taxParts[i] ?? 0) +
               (shipParts[i] ?? 0)
-            : Math.max(0, unitCost + (taxParts[i] ?? 0) + (shipParts[i] ?? 0) - (fixedDiscountParts[i] ?? 0)),
+            : Math.max(0, unitCost + (taxParts[i] ?? 0) + (shipParts[i] ?? 0) - (fixedDiscountParts[i] ?? 0))
+        ),
         tax_year: computeUkTaxYear(pDate),
         status: initialStatus,
         write_off_reason: null,
@@ -4838,10 +4840,11 @@ async function confirmSold() {
           misc_fees: eMisc || 0,
           discount_type: eDiscountType,
           discount_value: eDiscVal || 0,
-          total_cost:
+          total_cost: roundMoney(
             eDiscountType === "percent"
               ? Math.max(0, eUnit - (eUnit * (eDiscVal || 0)) / 100) * eQty + (eTax || 0) + (eShip || 0)
-              : Math.max(0, eUnit * eQty + (eTax || 0) + (eShip || 0) - (eDiscVal || 0)),
+              : Math.max(0, eUnit * eQty + (eTax || 0) + (eShip || 0) - (eDiscVal || 0))
+          ),
           tax_year: computeUkTaxYear(ePurchaseDate),
           write_off_reason:
             nextStatus == "written_off" ? selectedPurchase.write_off_reason : null,
